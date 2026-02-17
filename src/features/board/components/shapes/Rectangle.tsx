@@ -24,6 +24,13 @@ export default function Rectangle({
   const fill = obj.properties.fill || DEFAULT_SHAPE_COLOR;
   const stroke = obj.properties.stroke || '#000000';
   const strokeWidth = obj.properties.strokeWidth || DEFAULT_STROKE_WIDTH;
+  const lineStyle = obj.properties.lineStyle || 'solid';
+  const dash =
+    lineStyle === 'dashed'
+      ? [10, 5]
+      : lineStyle === 'dotted'
+        ? [3, 4]
+        : undefined;
 
   return (
     <Rect
@@ -33,9 +40,10 @@ export default function Rectangle({
       width={obj.width}
       height={obj.height}
       rotation={obj.rotation}
-      fill={fill}
+      fill={fill === 'transparent' ? undefined : fill}
       stroke={isSelected ? '#3B82F6' : stroke}
       strokeWidth={isSelected ? strokeWidth + 1 : strokeWidth}
+      dash={isSelected ? undefined : dash}
       cornerRadius={2}
       draggable
       onClick={(e) => {

@@ -9,14 +9,24 @@ interface TransformWrapperProps {
   stageRef: Konva.Stage | null;
   onTransformEnd: (
     id: string,
-    attrs: { x: number; y: number; width: number; height: number; rotation: number }
+    attrs: { x: number; y: number; width: number; height: number; rotation: number },
+    scale: { scaleX: number; scaleY: number }
   ) => void;
+  onTransform?: (
+    id: string,
+    attrs: { x: number; y: number; width: number; height: number; rotation: number },
+    scale: { scaleX: number; scaleY: number }
+  ) => void;
+  /** Pass objects map so the effect re-runs when objects change (e.g. after resize) */
+  objects?: Map<string, unknown>;
 }
 
 export default function TransformWrapper({
   selectedIds,
   stageRef,
   onTransformEnd,
+  onTransform,
+  objects,
 }: TransformWrapperProps) {
   const transformerRef = useRef<Konva.Transformer>(null);
 
@@ -34,7 +44,7 @@ export default function TransformWrapper({
 
     transformer.nodes(nodes);
     transformer.getLayer()?.batchDraw();
-  }, [selectedIds, stageRef]);
+  }, [selectedIds, stageRef, objects]);
 
   return (
     <Transformer
@@ -45,6 +55,28 @@ export default function TransformWrapper({
           return oldBox;
         }
         return newBox;
+      }}
+      onTransform={() => {
+        const transformer = transformerRef.current;
+        if (!transformer || !onTransform) return;
+
+        const nodes = transformer.nodes();
+        nodes.forEach((node) => {
+          const scaleX = node.scaleX();
+          const scaleY = node.scaleY();
+
+          onTransform(
+            node.id(),
+            {
+              x: node.x(),
+              y: node.y(),
+              width: Math.max(10, node.width() * scaleX),
+              height: Math.max(10, node.height() * scaleY),
+              rotation: node.rotation(),
+            },
+            { scaleX, scaleY }
+          );
+        });
       }}
       onTransformEnd={() => {
         const transformer = transformerRef.current;
@@ -59,13 +91,17 @@ export default function TransformWrapper({
           node.scaleX(1);
           node.scaleY(1);
 
-          onTransformEnd(node.id(), {
-            x: node.x(),
-            y: node.y(),
-            width: Math.max(10, node.width() * scaleX),
-            height: Math.max(10, node.height() * scaleY),
-            rotation: node.rotation(),
-          });
+          onTransformEnd(
+            node.id(),
+            {
+              x: node.x(),
+              y: node.y(),
+              width: Math.max(10, node.width() * scaleX),
+              height: Math.max(10, node.height() * scaleY),
+              rotation: node.rotation(),
+            },
+            { scaleX, scaleY }
+          );
         });
       }}
       rotateEnabled

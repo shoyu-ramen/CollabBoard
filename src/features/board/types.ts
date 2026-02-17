@@ -2,10 +2,8 @@ export type ObjectType =
   | 'sticky_note'
   | 'rectangle'
   | 'circle'
-  | 'line'
-  | 'text'
   | 'frame'
-  | 'connector';
+  | 'arrow';
 
 export interface WhiteboardObject {
   id: string;
@@ -31,13 +29,18 @@ export interface ObjectProperties {
   strokeWidth?: number;
   fontSize?: number;
   fontFamily?: string;
+  fontStyle?: 'normal' | 'bold' | 'italic' | 'bold italic';
+  textAlign?: 'left' | 'center' | 'right';
   // Sticky note specific
   noteColor?: string;
-  // Line/connector specific
+  // Arrow specific
   points?: number[];
-  fromId?: string;
-  toId?: string;
-  lineStyle?: 'solid' | 'dashed' | 'arrow';
+  lineStyle?: 'solid' | 'dashed' | 'dotted' | 'arrow';
+  // Arrow connection specific
+  startObjectId?: string;
+  endObjectId?: string;
+  startAnchorSide?: string;
+  endAnchorSide?: string;
   // Frame specific
   title?: string;
 }
@@ -47,6 +50,7 @@ export interface Board {
   name: string;
   created_by: string;
   created_at: string;
+  creator_email?: string;
 }
 
 export interface BoardMember {
@@ -76,8 +80,6 @@ export type ToolType =
   | 'sticky_note'
   | 'rectangle'
   | 'circle'
-  | 'line'
-  | 'text'
   | 'frame'
-  | 'connector'
+  | 'arrow'
   | 'pan';

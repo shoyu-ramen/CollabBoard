@@ -30,7 +30,7 @@ function formatToolCallLabel(toolCall: ToolCallResult): string {
     case 'createFrame':
       return `Created frame "${input.title as string}"`;
     case 'createConnector':
-      return `Connected two objects`;
+      return `Created arrow`;
     case 'moveObject':
       return `Moved object to (${input.x}, ${input.y})`;
     case 'resizeObject':

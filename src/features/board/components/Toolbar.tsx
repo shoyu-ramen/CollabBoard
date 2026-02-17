@@ -1,16 +1,22 @@
 'use client';
 
 import React from 'react';
+import {
+  MousePointer2,
+  StickyNote,
+  Square,
+  Circle,
+  ArrowRight,
+} from 'lucide-react';
 import type { ToolType } from '../types';
 import { useBoardObjects } from '../hooks/useBoardObjects';
 
-const tools: { type: ToolType; label: string; icon: string }[] = [
-  { type: 'select', label: 'Select', icon: 'V' },
-  { type: 'sticky_note', label: 'Sticky Note', icon: 'S' },
-  { type: 'rectangle', label: 'Rectangle', icon: 'R' },
-  { type: 'circle', label: 'Circle', icon: 'O' },
-  { type: 'line', label: 'Line', icon: 'L' },
-  { type: 'text', label: 'Text', icon: 'T' },
+const tools: { type: ToolType; label: string; icon: React.ElementType }[] = [
+  { type: 'select', label: 'Select', icon: MousePointer2 },
+  { type: 'sticky_note', label: 'Sticky Note', icon: StickyNote },
+  { type: 'rectangle', label: 'Rectangle', icon: Square },
+  { type: 'circle', label: 'Circle', icon: Circle },
+  { type: 'arrow', label: 'Arrow', icon: ArrowRight },
 ];
 
 export default function Toolbar() {
@@ -30,7 +36,7 @@ export default function Toolbar() {
               : 'text-gray-600 hover:bg-gray-100'
           }`}
         >
-          {tool.icon}
+          <tool.icon size={20} strokeWidth={2} />
         </button>
       ))}
     </div>

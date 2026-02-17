@@ -32,13 +32,13 @@ export const AI_TOOLS: ClaudeToolDefinition[] = [
   {
     name: 'createShape',
     description:
-      'Create a shape (rectangle, circle, or line) on the whiteboard.',
+      'Create a shape (rectangle or circle) on the whiteboard.',
     input_schema: {
       type: 'object',
       properties: {
         type: {
           type: 'string',
-          enum: ['rectangle', 'circle', 'line'],
+          enum: ['rectangle', 'circle'],
           description: 'The type of shape to create',
         },
         x: {
@@ -99,25 +99,32 @@ export const AI_TOOLS: ClaudeToolDefinition[] = [
   {
     name: 'createConnector',
     description:
-      'Create a connector line between two existing objects on the whiteboard.',
+      'Create an arrow between two points on the whiteboard.',
     input_schema: {
       type: 'object',
       properties: {
-        fromId: {
-          type: 'string',
-          description: 'The ID of the source object',
+        x1: {
+          type: 'number',
+          description: 'Start X coordinate',
         },
-        toId: {
-          type: 'string',
-          description: 'The ID of the target object',
+        y1: {
+          type: 'number',
+          description: 'Start Y coordinate',
         },
-        style: {
+        x2: {
+          type: 'number',
+          description: 'End X coordinate',
+        },
+        y2: {
+          type: 'number',
+          description: 'End Y coordinate',
+        },
+        color: {
           type: 'string',
-          enum: ['solid', 'dashed', 'arrow'],
-          description: 'Line style (default: "arrow")',
+          description: 'Arrow color (default: "#000000")',
         },
       },
-      required: ['fromId', 'toId'],
+      required: ['x1', 'y1', 'x2', 'y2'],
     },
   },
   {

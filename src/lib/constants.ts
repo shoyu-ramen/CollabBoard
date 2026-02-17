@@ -1,5 +1,6 @@
 // Cursor sync
 export const CURSOR_THROTTLE_MS = 50;
+export const OBJECT_SYNC_THROTTLE_MS = 50;
 export const CURSOR_COLORS = [
   '#EF4444', '#F59E0B', '#10B981', '#3B82F6',
   '#8B5CF6', '#EC4899', '#F97316', '#14B8A6',

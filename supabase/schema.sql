@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS board_members (
 CREATE TABLE IF NOT EXISTS whiteboard_objects (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   board_id UUID NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
-  object_type TEXT NOT NULL CHECK (object_type IN ('sticky_note', 'rectangle', 'circle', 'line', 'text', 'frame', 'connector')),
+  object_type TEXT NOT NULL CHECK (object_type IN ('sticky_note', 'rectangle', 'circle', 'line', 'text', 'frame', 'connector', 'arrow')),
   x DOUBLE PRECISION NOT NULL DEFAULT 0,
   y DOUBLE PRECISION NOT NULL DEFAULT 0,
   width DOUBLE PRECISION NOT NULL DEFAULT 100,
@@ -50,12 +50,19 @@ ALTER TABLE boards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE board_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE whiteboard_objects ENABLE ROW LEVEL SECURITY;
 
--- Boards: users can see boards they're members of
-CREATE POLICY "Users can view boards they belong to"
-  ON boards FOR SELECT
-  USING (
-    id IN (SELECT board_id FROM board_members WHERE user_id = auth.uid())
+-- Helper function to check board membership without triggering RLS recursion
+CREATE OR REPLACE FUNCTION public.is_board_member(p_board_id UUID, p_user_id UUID)
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM board_members
+    WHERE board_id = p_board_id AND user_id = p_user_id
   );
+$$ LANGUAGE sql SECURITY DEFINER;
+
+-- Boards: all authenticated users can see all boards (public boards)
+CREATE POLICY "Authenticated users can view all boards"
+  ON boards FOR SELECT
+  USING (auth.uid() IS NOT NULL);
 
 -- Boards: any authenticated user can create
 CREATE POLICY "Authenticated users can create boards"
@@ -72,41 +79,39 @@ CREATE POLICY "Board owners can update boards"
   ON boards FOR UPDATE
   USING (created_by = auth.uid());
 
--- Board members: members can see other members
-CREATE POLICY "Members can view board members"
+-- Board members: all authenticated users can see members (public boards)
+CREATE POLICY "Authenticated users can view board members"
   ON board_members FOR SELECT
-  USING (
-    board_id IN (SELECT board_id FROM board_members WHERE user_id = auth.uid())
-  );
+  USING (auth.uid() IS NOT NULL);
 
 -- Board members: board owner can manage members
 CREATE POLICY "Board owners can manage members"
   ON board_members FOR INSERT
   WITH CHECK (
-    board_id IN (SELECT id FROM boards WHERE created_by = auth.uid())
+    EXISTS (SELECT 1 FROM boards WHERE id = board_id AND created_by = auth.uid())
     OR user_id = auth.uid()
   );
 
 CREATE POLICY "Board owners can remove members"
   ON board_members FOR DELETE
   USING (
-    board_id IN (SELECT id FROM boards WHERE created_by = auth.uid())
+    EXISTS (SELECT 1 FROM boards WHERE id = board_id AND created_by = auth.uid())
   );
 
--- Whiteboard objects: board members can view
-CREATE POLICY "Board members can view objects"
+-- Whiteboard objects: all authenticated users can view (public boards)
+CREATE POLICY "Authenticated users can view objects"
   ON whiteboard_objects FOR SELECT
-  USING (
-    board_id IN (SELECT board_id FROM board_members WHERE user_id = auth.uid())
-  );
+  USING (auth.uid() IS NOT NULL);
 
 -- Whiteboard objects: editors and owners can create
 CREATE POLICY "Editors can create objects"
   ON whiteboard_objects FOR INSERT
   WITH CHECK (
-    board_id IN (
-      SELECT board_id FROM board_members
-      WHERE user_id = auth.uid() AND role IN ('owner', 'editor')
+    EXISTS (
+      SELECT 1 FROM board_members
+      WHERE board_id = whiteboard_objects.board_id
+        AND user_id = auth.uid()
+        AND role IN ('owner', 'editor')
     )
   );
 
@@ -114,9 +119,11 @@ CREATE POLICY "Editors can create objects"
 CREATE POLICY "Editors can update objects"
   ON whiteboard_objects FOR UPDATE
   USING (
-    board_id IN (
-      SELECT board_id FROM board_members
-      WHERE user_id = auth.uid() AND role IN ('owner', 'editor')
+    EXISTS (
+      SELECT 1 FROM board_members
+      WHERE board_id = whiteboard_objects.board_id
+        AND user_id = auth.uid()
+        AND role IN ('owner', 'editor')
     )
   );
 
@@ -124,14 +131,21 @@ CREATE POLICY "Editors can update objects"
 CREATE POLICY "Editors can delete objects"
   ON whiteboard_objects FOR DELETE
   USING (
-    board_id IN (
-      SELECT board_id FROM board_members
-      WHERE user_id = auth.uid() AND role IN ('owner', 'editor')
+    EXISTS (
+      SELECT 1 FROM board_members
+      WHERE board_id = whiteboard_objects.board_id
+        AND user_id = auth.uid()
+        AND role IN ('owner', 'editor')
     )
   );
 
--- Enable Realtime for whiteboard_objects
+-- Enable Realtime for whiteboard_objects and boards
 ALTER PUBLICATION supabase_realtime ADD TABLE whiteboard_objects;
+ALTER PUBLICATION supabase_realtime ADD TABLE boards;
+
+-- REPLICA IDENTITY FULL is required for Supabase Realtime to include the
+-- old record in DELETE events (needed for real-time delete sync).
+ALTER TABLE whiteboard_objects REPLICA IDENTITY FULL;
 
 -- Function to auto-add board creator as owner
 CREATE OR REPLACE FUNCTION add_board_creator_as_member()

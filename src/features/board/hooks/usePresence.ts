@@ -19,6 +19,7 @@ export function usePresence({
 }: UsePresenceOptions) {
   const [onlineUsers, setOnlineUsers] = useState<PresenceUser[]>([]);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const colorIndexRef = useRef<number>(0);
 
   useEffect(() => {
     if (!boardId || !userId || !userName) return;
@@ -32,6 +33,16 @@ export function usePresence({
       Math.abs(
         userId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
       ) % CURSOR_COLORS.length;
+    colorIndexRef.current = colorIndex;
+
+    // Include self immediately so we never show "0 online"
+    const selfUser: PresenceUser = {
+      userId,
+      userName,
+      color: CURSOR_COLORS[colorIndex],
+      onlineAt: new Date().toISOString(),
+    };
+    setOnlineUsers([selfUser]);
 
     channel
       .on('presence', { event: 'sync' }, () => {
@@ -42,15 +53,23 @@ export function usePresence({
           onlineAt: string;
         }>();
         const users: PresenceUser[] = [];
+        const seen = new Set<string>();
         for (const key of Object.keys(state)) {
           for (const presence of state[key]) {
-            users.push({
-              userId: presence.userId,
-              userName: presence.userName,
-              color: presence.color,
-              onlineAt: presence.onlineAt,
-            });
+            if (!seen.has(presence.userId)) {
+              seen.add(presence.userId);
+              users.push({
+                userId: presence.userId,
+                userName: presence.userName,
+                color: presence.color,
+                onlineAt: presence.onlineAt,
+              });
+            }
           }
+        }
+        // If presence state doesn't include self yet, add them
+        if (!seen.has(userId)) {
+          users.push(selfUser);
         }
         setOnlineUsers(users);
       })

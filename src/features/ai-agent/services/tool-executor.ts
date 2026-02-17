@@ -120,11 +120,11 @@ export async function executeTool(
 
     case 'createShape': {
       const shapeType = input.type as string;
-      if (!['rectangle', 'circle', 'line'].includes(shapeType)) {
+      if (!['rectangle', 'circle'].includes(shapeType)) {
         return {
           toolName,
           input,
-          result: `Invalid shape type: ${shapeType}. Must be rectangle, circle, or line.`,
+          result: `Invalid shape type: ${shapeType}. Must be rectangle or circle.`,
         };
       }
       const x = (input.x as number) ?? 100;
@@ -138,10 +138,6 @@ export async function executeTool(
         stroke: color,
         strokeWidth: DEFAULT_STROKE_WIDTH,
       };
-
-      if (shapeType === 'line') {
-        properties.points = [0, 0, width, height];
-      }
 
       const { id, error } = await insertObject(
         boardId,
@@ -203,23 +199,26 @@ export async function executeTool(
     }
 
     case 'createConnector': {
-      const fromId = input.fromId as string;
-      const toId = input.toId as string;
-      const style = (input.style as string) ?? 'arrow';
+      const x1 = (input.x1 as number) ?? (input.x as number) ?? 100;
+      const y1 = (input.y1 as number) ?? (input.y as number) ?? 100;
+      const x2 = (input.x2 as number) ?? x1 + 200;
+      const y2 = (input.y2 as number) ?? y1;
+      const color = (input.color as string) ?? '#000000';
+
+      const dx = x2 - x1;
+      const dy = y2 - y1;
 
       const { id, error } = await insertObject(
         boardId,
-        'connector',
-        0,
-        0,
-        0,
-        0,
+        'arrow',
+        x1,
+        y1,
+        dx,
+        dy,
         {
-          fromId,
-          toId,
-          lineStyle: style,
-          stroke: '#64748B',
+          stroke: color,
           strokeWidth: 2,
+          points: [0, 0, dx, dy],
         },
         userId
       );
@@ -228,13 +227,13 @@ export async function executeTool(
         return {
           toolName,
           input,
-          result: `Error creating connector: ${error}`,
+          result: `Error creating arrow: ${error}`,
         };
       }
       return {
         toolName,
         input,
-        result: `Created ${style} connector from ${fromId} to ${toId}`,
+        result: `Created arrow from (${x1}, ${y1}) to (${x2}, ${y2})`,
         objectId: id,
       };
     }

@@ -16,6 +16,7 @@ interface StickyNoteProps {
   onSelect: (id: string, multi: boolean) => void;
   onDragEnd: (id: string, x: number, y: number) => void;
   onTextChange?: (id: string, text: string) => void;
+  onTextInput?: (id: string, text: string) => void;
 }
 
 export default function StickyNote({
@@ -24,6 +25,7 @@ export default function StickyNote({
   onSelect,
   onDragEnd,
   onTextChange,
+  onTextInput,
 }: StickyNoteProps) {
   const textRef = useRef<Konva.Text>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -36,12 +38,14 @@ export default function StickyNote({
   const height = obj.height || DEFAULT_STICKY_HEIGHT;
   const text = obj.properties.text || '';
   const fontSize = obj.properties.fontSize || 16;
+  const fontStyle = obj.properties.fontStyle || 'normal';
+  const textAlign = obj.properties.textAlign || 'center';
 
   useEffect(() => {
     if (textRef.current) {
       textRef.current.cache();
     }
-  }, [text, width, height, fontSize]);
+  }, [text, width, height, fontSize, fontStyle, textAlign]);
 
   const handleDblClick = () => {
     if (!onTextChange) return;
@@ -50,46 +54,81 @@ export default function StickyNote({
     const stage = textRef.current?.getStage();
     if (!stage) return;
 
-    const textPosition = textRef.current!.absolutePosition();
+    const textNode = textRef.current!;
+    const textPosition = textNode.absolutePosition();
     const stageContainer = stage.container();
     const areaPosition = {
       x: stageContainer.offsetLeft + textPosition.x,
       y: stageContainer.offsetTop + textPosition.y,
     };
 
-    const textarea = document.createElement('textarea');
-    stageContainer.parentElement?.appendChild(textarea);
-
     const scale = stage.scaleX();
-    textarea.value = text;
-    textarea.style.position = 'absolute';
-    textarea.style.top = areaPosition.y + 'px';
-    textarea.style.left = areaPosition.x + 'px';
-    textarea.style.width = (width - 20) * scale + 'px';
-    textarea.style.height = (height - 20) * scale + 'px';
-    textarea.style.fontSize = fontSize * scale + 'px';
-    textarea.style.border = 'none';
-    textarea.style.padding = '5px';
-    textarea.style.margin = '0px';
-    textarea.style.overflow = 'hidden';
-    textarea.style.background = 'transparent';
-    textarea.style.outline = 'none';
-    textarea.style.resize = 'none';
-    textarea.style.fontFamily = obj.properties.fontFamily || 'sans-serif';
-    textarea.style.zIndex = '1000';
 
-    textarea.focus();
+    // Wrapper div with flex centering to match verticalAlign="middle"
+    const wrapper = document.createElement('div');
+    wrapper.style.position = 'absolute';
+    wrapper.style.top = areaPosition.y + 'px';
+    wrapper.style.left = areaPosition.x + 'px';
+    wrapper.style.width = (width - 20) * scale + 'px';
+    wrapper.style.height = (height - 20) * scale + 'px';
+    wrapper.style.display = 'flex';
+    wrapper.style.alignItems = 'center';
+    wrapper.style.justifyContent = 'center';
+    wrapper.style.zIndex = '1000';
+
+    const editable = document.createElement('div');
+    editable.contentEditable = 'true';
+    editable.style.width = '100%';
+    editable.style.maxHeight = '100%';
+    editable.style.overflow = 'hidden';
+    editable.style.outline = 'none';
+    editable.style.fontSize = fontSize * scale + 'px';
+    editable.style.fontFamily = obj.properties.fontFamily || 'sans-serif';
+    editable.style.fontWeight = fontStyle.includes('bold') ? 'bold' : 'normal';
+    editable.style.fontStyle = fontStyle.includes('italic') ? 'italic' : 'normal';
+    editable.style.textAlign = textAlign;
+    editable.style.color = '#1a1a1a';
+    editable.style.wordBreak = 'break-word';
+    editable.style.whiteSpace = 'pre-wrap';
+    editable.innerText = text;
+
+    wrapper.appendChild(editable);
+    stageContainer.parentElement?.appendChild(wrapper);
+
+    // Focus and place cursor at end
+    editable.focus();
+    const sel = window.getSelection();
+    if (sel && editable.childNodes.length > 0) {
+      const range = document.createRange();
+      range.selectNodeContents(editable);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    // Clicking the wrapper (padding area) keeps focus on editable
+    wrapper.addEventListener('mousedown', (e) => {
+      if (e.target === wrapper) {
+        e.preventDefault();
+        editable.focus();
+      }
+    });
 
     const handleBlur = () => {
-      onTextChange(obj.id, textarea.value);
-      textarea.remove();
+      onTextChange(obj.id, editable.innerText);
+      wrapper.remove();
       setIsEditing(false);
     };
 
-    textarea.addEventListener('blur', handleBlur);
-    textarea.addEventListener('keydown', (e) => {
+    editable.addEventListener('blur', handleBlur);
+    editable.addEventListener('input', () => {
+      if (onTextInput) {
+        onTextInput(obj.id, editable.innerText);
+      }
+    });
+    editable.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        textarea.blur();
+        editable.blur();
       }
     });
   };
@@ -104,7 +143,7 @@ export default function StickyNote({
       onClick={(e) => {
         onSelect(obj.id, e.evt.shiftKey);
       }}
-      onTap={(e) => {
+      onTap={() => {
         onSelect(obj.id, false);
       }}
       onDragEnd={(e) => {
@@ -142,6 +181,9 @@ export default function StickyNote({
         text={text}
         fontSize={fontSize}
         fontFamily={obj.properties.fontFamily || 'sans-serif'}
+        fontStyle={fontStyle}
+        align={textAlign}
+        verticalAlign="middle"
         fill="#1a1a1a"
         wrap="word"
         ellipsis
