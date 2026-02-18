@@ -172,32 +172,32 @@ test.describe('Canvas interactions', () => {
     );
     await page.waitForTimeout(300);
 
-    // Verify selected (transformer visible)
-    let hasTransformer = await page.evaluate(() => {
+    // Verify selected (transformer has nodes attached)
+    let transformerNodeCount = await page.evaluate(() => {
       const stage = (window as unknown as Record<string, unknown>)
         .__KONVA_STAGE__ as {
-        find: (selector: string) => Array<{ visible: () => boolean }>;
+        find: (selector: string) => Array<{ nodes: () => unknown[] }>;
       } | undefined;
-      if (!stage) return false;
+      if (!stage) return 0;
       const transformers = stage.find('Transformer');
-      return transformers.some((t) => t.visible());
+      return transformers.reduce((sum, t) => sum + t.nodes().length, 0);
     });
-    expect(hasTransformer).toBe(true);
+    expect(transformerNodeCount).toBeGreaterThan(0);
 
     // Press Escape to deselect
     await page.keyboard.press('Escape');
     await page.waitForTimeout(300);
 
-    // Verify deselected
-    hasTransformer = await page.evaluate(() => {
+    // Verify deselected (transformer has no nodes)
+    transformerNodeCount = await page.evaluate(() => {
       const stage = (window as unknown as Record<string, unknown>)
         .__KONVA_STAGE__ as {
-        find: (selector: string) => Array<{ visible: () => boolean }>;
+        find: (selector: string) => Array<{ nodes: () => unknown[] }>;
       } | undefined;
-      if (!stage) return false;
+      if (!stage) return 0;
       const transformers = stage.find('Transformer');
-      return transformers.some((t) => t.visible());
+      return transformers.reduce((sum, t) => sum + t.nodes().length, 0);
     });
-    expect(hasTransformer).toBe(false);
+    expect(transformerNodeCount).toBe(0);
   });
 });
