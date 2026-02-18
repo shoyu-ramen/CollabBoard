@@ -54,6 +54,7 @@ export function MemberManagementModal({
 
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch data when modal opens
       fetchMembers();
     }
   }, [isOpen, fetchMembers]);

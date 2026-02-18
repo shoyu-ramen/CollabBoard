@@ -585,7 +585,7 @@ export default function Canvas({
         currentY: pos.y,
       });
     },
-    [activeTool, isCreationTool, deselectAll, panOffset, zoom, objects, selectedIds, setActiveTool, addObject, selectObject]
+    [activeTool, isCreationTool, deselectAll, panOffset, zoom, objects, selectedIds, setActiveTool]
   );
 
   // Mouse move: update drawing preview, hover detection, or anchor-arrow preview
