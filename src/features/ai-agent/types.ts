@@ -91,6 +91,14 @@ export interface AIResponseBody {
   reply: string;
   toolCalls: ToolCallResult[];
   createdObjects?: WhiteboardObject[];
+  deletedObjectIds?: string[];
   error?: string;
+}
+
+export interface AIRequestContext {
+  requestId: string;
+  userId: string;
+  boardId: string;
+  startTime: number;
 }
 

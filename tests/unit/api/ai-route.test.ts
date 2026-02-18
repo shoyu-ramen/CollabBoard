@@ -282,7 +282,13 @@ describe('POST /api/ai', () => {
       'b1',
       'user-1',
       expect.any(Array),
-      { x: 500, y: 300 }
+      { x: 500, y: 300 },
+      expect.objectContaining({
+        requestId: expect.any(String),
+        userId: 'user-1',
+        boardId: 'b1',
+        startTime: expect.any(Number),
+      })
     );
   });
 

@@ -137,10 +137,15 @@ export function findObjectAtPoint(
     const h = Math.max(height, 20);
 
     // Transform test point into the object's local (unrotated) space
+    // Pivot must match Konva's rotation origin per shape type:
+    //   Rect/StickyNote/Text → (x, y) (top-left)
+    //   Ellipse (circle)     → (x + w/2, y + h/2) (center)
     let localX = px;
     let localY = py;
     if (rotation) {
-      const inv = rotatePoint(px, py, x, y, -rotation);
+      const pivotX = obj.object_type === 'circle' ? x + w / 2 : x;
+      const pivotY = obj.object_type === 'circle' ? y + h / 2 : y;
+      const inv = rotatePoint(px, py, pivotX, pivotY, -rotation);
       localX = inv.x;
       localY = inv.y;
     }
@@ -191,7 +196,7 @@ export function findNearestAnchorGlobal(
 }
 
 /**
- * Find all arrows connected to a given object (by startObjectId or endObjectId).
+ * Find all arrows/lines connected to a given object (by startObjectId or endObjectId).
  */
 export function getConnectedArrows(
   objects: Map<string, WhiteboardObject>,
@@ -199,7 +204,7 @@ export function getConnectedArrows(
 ): WhiteboardObject[] {
   const arrows: WhiteboardObject[] = [];
   objects.forEach((obj) => {
-    if (obj.object_type === 'arrow') {
+    if (obj.object_type === 'arrow' || obj.object_type === 'line') {
       if (
         obj.properties.startObjectId === objectId ||
         obj.properties.endObjectId === objectId

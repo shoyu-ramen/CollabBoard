@@ -114,7 +114,7 @@ describe('callClaude', () => {
     expect(body.system).toBe('You are a helpful assistant');
     expect(body.messages).toEqual([{ role: 'user', content: 'Hi' }]);
     expect(body.tools).toBeDefined();
-    expect(body.tools.length).toBe(10);
+    expect(body.tools.length).toBe(11);
   });
 
   it('throws error when API key is missing', async () => {
@@ -240,7 +240,8 @@ describe('processAIMessage', () => {
       'createStickyNote',
       { text: 'test note' },
       'board-1',
-      'user-1'
+      'user-1',
+      undefined
     );
     expect(result.reply).toBe('I created a sticky note for you.');
     expect(result.toolCalls).toHaveLength(1);

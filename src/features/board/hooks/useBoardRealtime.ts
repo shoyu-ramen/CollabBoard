@@ -227,6 +227,14 @@ export function useBoardRealtime({
       config: { presence: { key: userId } },
     });
 
+    // Ensure presence is cleaned up when the browser tab closes (React
+    // cleanup effects don't reliably run on tab close, which leaves stale
+    // presence entries on the server until the heartbeat timeout expires).
+    const handleBeforeUnload = () => {
+      liveChannel.untrack();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     // --- Cursor broadcast ---
     liveChannel.on('broadcast', { event: 'cursor' }, ({ payload }) => {
       const cursor = payload as CursorPosition;
@@ -344,6 +352,21 @@ export function useBoardRealtime({
       }
     );
 
+    // --- Presence leave (immediate cursor cleanup) ---
+    liveChannel.on('presence', { event: 'leave' }, ({ leftPresences }) => {
+      const left = leftPresences as unknown as Array<{ userId: string }>;
+      if (left.length === 0) return;
+      const leftIds = new Set(left.map((p) => p.userId));
+      setRemoteCursors((prev) => {
+        let changed = false;
+        const next = new Map(prev);
+        for (const id of leftIds) {
+          if (next.delete(id)) changed = true;
+        }
+        return changed ? next : prev;
+      });
+    });
+
     // --- Presence sync ---
     liveChannel.on('presence', { event: 'sync' }, () => {
       const presenceState = liveChannel.presenceState<{
@@ -371,6 +394,19 @@ export function useBoardRealtime({
         users.push(selfUser);
       }
       setOnlineUsers(users);
+
+      // Remove cursors for users who are no longer present
+      setRemoteCursors((prev) => {
+        let changed = false;
+        const next = new Map(prev);
+        for (const cursorUserId of next.keys()) {
+          if (!seen.has(cursorUserId)) {
+            next.delete(cursorUserId);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
     });
 
     // Subscribe and track presence
@@ -393,10 +429,15 @@ export function useBoardRealtime({
     });
 
     return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
       subscribedRef.current = false;
       liveChannelRef.current = null;
       _broadcastFn = null;
       _pendingBroadcasts = [];
+      // Explicitly untrack presence before removing the channel so the
+      // server drops our entry immediately instead of waiting for the
+      // heartbeat timeout. This prevents stale "ghost" users.
+      liveChannel.untrack();
       supabase.removeChannel(liveChannel);
     };
   }, [boardId, userId, userName]);

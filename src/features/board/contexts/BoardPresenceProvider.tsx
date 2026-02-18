@@ -94,6 +94,7 @@ export function BoardPresenceProvider({
     channelRef.current = channel;
 
     return () => {
+      channel.untrack();
       supabase.removeChannel(channel);
       channelRef.current = null;
     };

@@ -111,6 +111,39 @@ Optimized for 500+ objects at 60 FPS:
 - `shape.cache()` for static objects
 - `listening={false}` on non-interactive elements
 
+## Observability
+
+The AI agent emits structured JSON logs to stdout/stderr, which Railway captures natively and makes searchable. Every request is traceable end-to-end via a shared `requestId` (UUID).
+
+### Log Events
+
+| Event | Level | Description |
+|---|---|---|
+| `ai.request.start` | info | Request accepted — userId, boardId, message preview, board object count |
+| `ai.request.complete` | info | Request finished — total duration, tool call count, created object count |
+| `ai.request.rejected` | warn | Request rejected — reason (auth, rate limit, validation, authorization) |
+| `ai.request.error` | error | Unhandled error — error message, stack trace, duration |
+| `ai.claude.call` | info | Claude API call — iteration, duration, input/output tokens, stop reason, model |
+| `ai.claude.error` | error | Claude API failure — iteration, duration, HTTP status code |
+| `ai.tool.execute` | info | Tool executed successfully — tool name, duration, object ID |
+| `ai.tool.error` | warn | Tool execution failed — tool name, error message |
+| `ai.loop.complete` | info/warn | Agentic loop finished — total iterations, tool calls, token totals, whether max iterations was hit |
+
+### Example Log Chain
+
+A request like "Create a SWOT analysis" produces ~9 log lines:
+
+```
+ai.request.start    → userId, boardId, "Create a SWOT analysis..."
+ai.claude.call      → iteration=1, 1180ms, 1450/890 tokens, stop_reason=tool_use, 5 tools
+ai.tool.execute x5  → createFrame 45ms, createStickyNote 42ms, 38ms, 41ms, 39ms
+ai.claude.call      → iteration=2, 1150ms, 2100/150 tokens, stop_reason=end_turn
+ai.loop.complete    → 2 iterations, 5 tools, 3550/1040 tokens
+ai.request.complete → 2650ms total, 5 tool calls, 5 objects created
+```
+
+All entries share the same `requestId` for correlation. Filter in Railway logs with `ai.request.start`, `ai.tool.error`, etc.
+
 ## Available Scripts
 
 ```bash

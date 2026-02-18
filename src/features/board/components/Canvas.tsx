@@ -19,6 +19,8 @@ import {
   DEFAULT_STROKE_WIDTH,
   DEFAULT_FRAME_WIDTH,
   DEFAULT_FRAME_HEIGHT,
+  DEFAULT_TEXT_WIDTH,
+  DEFAULT_TEXT_HEIGHT,
   DEFAULT_TEXT_FONT_SIZE,
   DEFAULT_TEXT_COLOR,
   DEFAULT_TEXT_FONT_FAMILY,
@@ -220,7 +222,8 @@ export default function Canvas({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
         e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target instanceof HTMLElement && e.target.isContentEditable)
       ) {
         return;
       }
@@ -275,8 +278,8 @@ export default function Canvas({
         setActiveTool('select');
       }
 
-      // Alt pressed while mouse is held: re-enter pan mode
-      if (e.key === 'Alt' && mouseHeldRef.current && !altPanActive.current) {
+      // Alt pressed while mouse is held: temporarily enter pan mode (skip if already in pan mode)
+      if (e.key === 'Alt' && mouseHeldRef.current && !altPanActive.current && useBoardObjects.getState().activeTool !== 'pan') {
         altPanActive.current = true;
         isPanningRef.current = true;
         setIsPanning(true);
@@ -406,14 +409,14 @@ export default function Canvas({
           return {
             ...base,
             object_type: 'text',
-            width: 0,
-            height: 0,
+            width: width || DEFAULT_TEXT_WIDTH,
+            height: height || DEFAULT_TEXT_HEIGHT,
             properties: {
               text: '',
               fontSize: DEFAULT_TEXT_FONT_SIZE,
               fontFamily: DEFAULT_TEXT_FONT_FAMILY,
               color: DEFAULT_TEXT_COLOR,
-              textAlign: 'left',
+              textAlign: 'center',
             },
           };
         default:
@@ -454,7 +457,7 @@ export default function Canvas({
           const pointer = stage.getPointerPosition();
           if (pointer) {
             const pos = screenToCanvas(pointer.x, pointer.y, panOffset, zoom);
-            const excludeTypes = new Set(['arrow']);
+            const excludeTypes = new Set(['arrow', 'line']);
             const result = findNearestAnchorGlobal(
               objects,
               pos.x,
@@ -502,43 +505,6 @@ export default function Canvas({
 
       if (!isCreationTool) return;
 
-      // Text tool: click to place, immediately enter edit mode
-      if (activeTool === 'text') {
-        const stage = stageRef.current;
-        if (!stage) return;
-        const pointer = stage.getPointerPosition();
-        if (!pointer) return;
-        const pos = screenToCanvas(pointer.x, pointer.y, panOffset, zoom);
-
-        const now = new Date().toISOString();
-        const textObj: WhiteboardObject = {
-          id: uuidv4(),
-          board_id: '',
-          object_type: 'text',
-          x: pos.x,
-          y: pos.y,
-          width: 0,
-          height: 0,
-          rotation: 0,
-          properties: {
-            text: '',
-            fontSize: DEFAULT_TEXT_FONT_SIZE,
-            fontFamily: DEFAULT_TEXT_FONT_FAMILY,
-            color: DEFAULT_TEXT_COLOR,
-            textAlign: 'left',
-          },
-          updated_by: '',
-          updated_at: now,
-          created_at: now,
-          version: 1,
-        };
-        addObject(textObj);
-        selectObject(textObj.id);
-        setAutoEditTextId(textObj.id);
-        setActiveTool('select');
-        return;
-      }
-
       // Line tool: drag to draw (like arrow but no pointer head)
       if (activeTool === 'line') {
         const stage = stageRef.current;
@@ -547,12 +513,25 @@ export default function Canvas({
         if (!pointer) return;
         const pos = screenToCanvas(pointer.x, pointer.y, panOffset, zoom);
 
+        // Try snapping to anchor (same as arrow tool)
+        const excludeTypes = new Set(['arrow', 'line']);
+        const result = findNearestAnchorGlobal(
+          objects, pos.x, pos.y, excludeTypes, ANCHOR_SNAP_RADIUS / zoom
+        );
+        const startPos = result ? { x: result.anchor.x, y: result.anchor.y } : pos;
+        arrowStartObjRef.current = result?.obj.id || null;
+        arrowStartSideRef.current = result?.anchor.side || null;
+        arrowEndObjRef.current = null;
+        arrowEndSideRef.current = null;
+
         isDrawing.current = true;
+        setHoveredObjectId(null);
+        setNearestHoveredAnchor(null);
         setDrawingPreview({
-          startX: pos.x,
-          startY: pos.y,
-          currentX: pos.x,
-          currentY: pos.y,
+          startX: startPos.x,
+          startY: startPos.y,
+          currentX: startPos.x,
+          currentY: startPos.y,
         });
         return;
       }
@@ -566,7 +545,7 @@ export default function Canvas({
         const pos = screenToCanvas(pointer.x, pointer.y, panOffset, zoom);
 
         // Try snapping to anchor
-        const excludeTypes = new Set(['arrow']);
+        const excludeTypes = new Set(['arrow', 'line']);
         const result = findNearestAnchorGlobal(
           objects, pos.x, pos.y, excludeTypes, ANCHOR_SNAP_RADIUS / zoom
         );
@@ -577,6 +556,8 @@ export default function Canvas({
         arrowEndSideRef.current = null;
 
         isDrawing.current = true;
+        setHoveredObjectId(null);
+        setNearestHoveredAnchor(null);
         setDrawingPreview({
           startX: startPos.x,
           startY: startPos.y,
@@ -633,7 +614,7 @@ export default function Canvas({
         let newY = pos.y;
 
         // Snap to anchors
-        const excludeTypes = new Set(['arrow']);
+        const excludeTypes = new Set(['arrow', 'line']);
         const snapResult = findNearestAnchorGlobal(
           objects, newX, newY, excludeTypes, ANCHOR_SNAP_RADIUS / zoom
         );
@@ -690,7 +671,7 @@ export default function Canvas({
       // Arrow-from-anchor drag (started in select mode)
       if (isDrawingArrowFromAnchor.current && arrowFromAnchor) {
         // Snap to target anchor if hovering a shape
-        const excludeTypes = new Set(['arrow']);
+        const excludeTypes = new Set(['arrow', 'line']);
         const hoverObj = findObjectAtPoint(objects, pos.x, pos.y, excludeTypes);
         if (hoverObj) {
           setArrowTargetObjId(hoverObj.id);
@@ -717,35 +698,32 @@ export default function Canvas({
         return;
       }
 
-      // Select mode: track hovered shape for anchor marks
+      // Select/arrow/line mode: track hovered shape for anchor marks
       // Use padding so anchors appear when cursor is near the edge
-      if (activeTool === 'select') {
-        const excludeTypes = new Set(['arrow']);
-        const anchorPadding = ANCHOR_SNAP_RADIUS / zoom;
-        const hoverObj = findObjectAtPoint(
-          objects, pos.x, pos.y, excludeTypes, anchorPadding
-        );
-        setHoveredObjectId(hoverObj ? hoverObj.id : null);
-        if (hoverObj) {
-          const nearest = getClosestAnchor(hoverObj, pos.x, pos.y);
-          setNearestHoveredAnchor(nearest);
-        } else {
-          setNearestHoveredAnchor(null);
+      if (activeTool === 'select' || activeTool === 'arrow' || activeTool === 'line') {
+        // When not drawing, show anchor hints on hover
+        if (!isDrawing.current) {
+          const excludeTypes = new Set(['arrow', 'line']);
+          const anchorPadding = ANCHOR_SNAP_RADIUS / zoom;
+          const hoverObj = findObjectAtPoint(
+            objects, pos.x, pos.y, excludeTypes, anchorPadding
+          );
+          setHoveredObjectId(hoverObj ? hoverObj.id : null);
+          if (hoverObj) {
+            const nearest = getClosestAnchor(hoverObj, pos.x, pos.y);
+            setNearestHoveredAnchor(nearest);
+          } else {
+            setNearestHoveredAnchor(null);
+          }
+          if (activeTool === 'select') return;
+          // For arrow/line tools, also return if not drawing
+          if (!drawingPreview) return;
         }
-        return;
       }
 
-      // Line tool drawing: just update preview endpoint
-      if (activeTool === 'line' && isDrawing.current && drawingPreview) {
-        setDrawingPreview((prev) =>
-          prev ? { ...prev, currentX: pos.x, currentY: pos.y } : null
-        );
-        return;
-      }
-
-      // Arrow tool drawing: snap endpoint to anchor
-      if (activeTool === 'arrow' && isDrawing.current && drawingPreview) {
-        const excludeTypes = new Set(['arrow']);
+      // Line/arrow tool drawing: snap endpoint to anchor
+      if ((activeTool === 'line' || activeTool === 'arrow') && isDrawing.current && drawingPreview) {
+        const excludeTypes = new Set(['arrow', 'line']);
         const hoverObj = findObjectAtPoint(objects, pos.x, pos.y, excludeTypes);
         if (hoverObj) {
           setArrowTargetObjId(hoverObj.id);
@@ -829,15 +807,36 @@ export default function Canvas({
             shiftKey ? selectedIds : []
           );
 
+          // Konva rotates shapes around (x, y) by default (no offset)
+          const rotPt = (
+            px: number, py: number,
+            pivotX: number, pivotY: number,
+            cos: number, sin: number
+          ) => ({
+            x: pivotX + (px - pivotX) * cos - (py - pivotY) * sin,
+            y: pivotY + (px - pivotX) * sin + (py - pivotY) * cos,
+          });
+
           objects.forEach((obj) => {
+            const rot = obj.rotation || 0;
+            const rad = (rot * Math.PI) / 180;
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+
             if (obj.object_type === 'arrow' || obj.object_type === 'line') {
               const points = (obj.properties.points as number[]) || [
                 0, 0, obj.width, obj.height,
               ];
-              const sx = obj.x + points[0];
-              const sy = obj.y + points[1];
-              const ex = obj.x + points[2];
-              const ey = obj.y + points[3];
+              let sx = obj.x + points[0];
+              let sy = obj.y + points[1];
+              let ex = obj.x + points[2];
+              let ey = obj.y + points[3];
+              if (rot !== 0) {
+                const s = rotPt(sx, sy, obj.x, obj.y, cos, sin);
+                const e = rotPt(ex, ey, obj.x, obj.y, cos, sin);
+                sx = s.x; sy = s.y;
+                ex = e.x; ey = e.y;
+              }
               if (
                 (sx >= x1 && sx <= x2 && sy >= y1 && sy <= y2) ||
                 (ex >= x1 && ex <= x2 && ey >= y1 && ey <= y2)
@@ -845,13 +844,32 @@ export default function Canvas({
                 newSelected.add(obj.id);
               }
             } else {
-              const objRight = obj.x + obj.width;
-              const objBottom = obj.y + obj.height;
+              let ox1 = obj.x;
+              let oy1 = obj.y;
+              let ox2 = obj.x + obj.width;
+              let oy2 = obj.y + obj.height;
+              if (rot !== 0) {
+                // Circle (Ellipse) rotates around center; others around (x,y)
+                const pivotX = obj.object_type === 'circle'
+                  ? obj.x + obj.width / 2 : obj.x;
+                const pivotY = obj.object_type === 'circle'
+                  ? obj.y + obj.height / 2 : obj.y;
+                const corners = [
+                  { x: obj.x, y: obj.y },
+                  { x: obj.x + obj.width, y: obj.y },
+                  { x: obj.x + obj.width, y: obj.y + obj.height },
+                  { x: obj.x, y: obj.y + obj.height },
+                ].map((p) => rotPt(p.x, p.y, pivotX, pivotY, cos, sin));
+                ox1 = Math.min(...corners.map((c) => c.x));
+                oy1 = Math.min(...corners.map((c) => c.y));
+                ox2 = Math.max(...corners.map((c) => c.x));
+                oy2 = Math.max(...corners.map((c) => c.y));
+              }
               if (
-                obj.x < x2 &&
-                objRight > x1 &&
-                obj.y < y2 &&
-                objBottom > y1
+                ox1 < x2 &&
+                ox2 > x1 &&
+                oy1 < y2 &&
+                oy2 > y1
               ) {
                 newSelected.add(obj.id);
               }
@@ -987,12 +1005,20 @@ export default function Canvas({
             stroke: DEFAULT_LINE_COLOR,
             strokeWidth: DEFAULT_LINE_WIDTH,
             points: [0, 0, currentX - startX, currentY - startY],
+            startObjectId: arrowStartObjRef.current || undefined,
+            endObjectId: arrowEndObjRef.current || undefined,
+            startAnchorSide: arrowStartSideRef.current || undefined,
+            endAnchorSide: arrowEndSideRef.current || undefined,
           },
           updated_by: '',
           updated_at: now,
           created_at: now,
           version: 1,
         };
+        arrowStartObjRef.current = null;
+        arrowEndObjRef.current = null;
+        arrowStartSideRef.current = null;
+        arrowEndSideRef.current = null;
       } else if (activeTool === 'arrow' && useDragged) {
         // Arrows use start point as origin with relative endpoint
         const now = new Date().toISOString();
@@ -1037,10 +1063,13 @@ export default function Canvas({
       if (newObj) {
         addObject(newObj);
         selectObject(newObj.id);
+        if (newObj.object_type === 'text' || newObj.object_type === 'sticky_note') {
+          setAutoEditTextId(newObj.id);
+        }
         setActiveTool('select');
       }
     },
-    [drawingPreview, activeTool, buildObject, addObject, updateObject, selectObject, setSelectedIds, setActiveTool, arrowFromAnchor, arrowPreviewEnd, selectionRect, selectedIds, objects]
+    [drawingPreview, activeTool, buildObject, addObject, updateObject, selectObject, setSelectedIds, setActiveTool, setAutoEditTextId, arrowFromAnchor, arrowPreviewEnd, selectionRect, selectedIds, objects]
   );
 
   // Compute preview rect bounds for rendering
@@ -1283,7 +1312,7 @@ export default function Canvas({
             const processedArrows = new Set<string>();
             state.selectedIds.forEach((movedId) => {
               const movedObj = consolidated.get(movedId);
-              if (!movedObj || movedObj.object_type === 'arrow') return;
+              if (!movedObj || movedObj.object_type === 'arrow' || movedObj.object_type === 'line') return;
 
               const connectedArrows = getConnectedArrows(consolidated, movedId);
               for (const arrow of connectedArrows) {
@@ -1327,7 +1356,7 @@ export default function Canvas({
           state.objects.forEach((child) => {
             if (child.id === id) return;
             // Check if fully inside the frame
-            if (child.object_type === 'arrow') {
+            if (child.object_type === 'arrow' || child.object_type === 'line') {
               const points = (child.properties.points as number[]) || [0, 0, child.width, child.height];
               const sx = child.x + points[0], sy = child.y + points[1];
               const ex = child.x + points[2], ey = child.y + points[3];
@@ -1389,7 +1418,7 @@ export default function Canvas({
             const processedArrows = new Set<string>();
             frameDragChildren.current.forEach((_origPos, childId) => {
               const childObj = consolidated.get(childId);
-              if (!childObj || childObj.object_type === 'arrow') return;
+              if (!childObj || childObj.object_type === 'arrow' || childObj.object_type === 'line') return;
 
               const connectedArrows = getConnectedArrows(consolidated, childId);
               for (const arrow of connectedArrows) {
@@ -1474,7 +1503,7 @@ export default function Canvas({
         const processedArrows = new Set<string>();
         state.selectedIds.forEach((movedId) => {
           const movedObj = broadcastArrowState.objects.get(movedId);
-          if (!movedObj || movedObj.object_type === 'arrow') return;
+          if (!movedObj || movedObj.object_type === 'arrow' || movedObj.object_type === 'line') return;
           const connectedArrows = getConnectedArrows(broadcastArrowState.objects, movedId);
           for (const arrow of connectedArrows) {
             if (processedArrows.has(arrow.id)) continue;
@@ -1605,7 +1634,7 @@ export default function Canvas({
 
       const updates: Partial<WhiteboardObject> = { ...attrs };
 
-      if (obj.object_type === 'sticky_note') {
+      if (obj.object_type === 'sticky_note' || obj.object_type === 'text') {
         updates.width = Math.max(10, obj.width * scale.scaleX);
         updates.height = Math.max(10, obj.height * scale.scaleY);
       }
@@ -1647,7 +1676,7 @@ export default function Canvas({
         // Process arrows for ALL selected objects (deduped)
         state.selectedIds.forEach((sid) => {
           const sobj = consolidated.get(sid);
-          if (!sobj || sobj.object_type === 'arrow') return;
+          if (!sobj || sobj.object_type === 'arrow' || sobj.object_type === 'line') return;
 
           const connectedArrows = getConnectedArrows(consolidated, sid);
           for (const arrow of connectedArrows) {
@@ -1737,7 +1766,7 @@ export default function Canvas({
           rotation: sobj.rotation,
         };
 
-        if (sobj.object_type === 'arrow' && sobj.properties?.points) {
+        if ((sobj.object_type === 'arrow' || sobj.object_type === 'line') && sobj.properties?.points) {
           objUpdates.properties = sobj.properties;
         }
 
@@ -1841,9 +1870,9 @@ export default function Canvas({
         version: (obj.version || 0) + 1,
       };
 
-      // Sticky note uses a Group — node.width()/height() returns 0 for
-      // Groups, so compute new dimensions from stored size x scale.
-      if (obj.object_type === 'sticky_note') {
+      // Sticky note and text use a Group — node.width()/height() returns 0
+      // for Groups, so compute new dimensions from stored size x scale.
+      if (obj.object_type === 'sticky_note' || obj.object_type === 'text') {
         updates.width = Math.max(10, obj.width * scale.scaleX);
         updates.height = Math.max(10, obj.height * scale.scaleY);
       }
@@ -1942,6 +1971,7 @@ export default function Canvas({
             {...common}
             onTextChange={handleTextChange}
             onTextInput={handleTextInput}
+            autoEdit={autoEditTextId === obj.id}
           />
         );
       case 'rectangle':
@@ -1975,10 +2005,10 @@ export default function Canvas({
     }
   };
 
-  // Compute hovered object anchors for select mode hover
+  // Compute hovered object anchors for select/arrow/line mode hover
   // Don't show anchors on selected objects (conflicts with resize handles)
   const hoveredAnchors = useMemo(() => {
-    if (!hoveredObjectId || activeTool !== 'select') return null;
+    if (!hoveredObjectId || (activeTool !== 'select' && activeTool !== 'arrow' && activeTool !== 'line')) return null;
     if (selectedIds.has(hoveredObjectId)) return null;
     const obj = objects.get(hoveredObjectId);
     if (!obj) return null;
@@ -2180,8 +2210,8 @@ export default function Canvas({
               listening={false}
             />
           )}
-          {/* Anchor X marks on hovered shape (select mode) */}
-          {hoveredAnchors && !isDrawingArrowFromAnchor.current && hoveredAnchors.map((a) => {
+          {/* Anchor X marks on hovered shape (select/arrow/line mode) */}
+          {hoveredAnchors && !isDrawingArrowFromAnchor.current && !isDrawing.current && hoveredAnchors.map((a) => {
             const isNearest = nearestHoveredAnchor?.side === a.side;
             const s = 3 / zoom;
             return (

@@ -1,4 +1,5 @@
 import { AI_MODEL } from '@/lib/constants';
+import { logger } from '@/lib/logger';
 import { AI_TOOLS } from '../schemas/tools';
 import { executeTool } from './tool-executor';
 import type {
@@ -9,6 +10,7 @@ import type {
   ClaudeToolResultBlock,
   ToolCallResult,
   BoardStateSummary,
+  AIRequestContext,
 } from '../types';
 
 const MAX_TOOL_ITERATIONS = 10;
@@ -45,12 +47,16 @@ GUIDELINES:
 
 export async function callClaude(
   messages: ClaudeMessage[],
-  systemPrompt: string
+  systemPrompt: string,
+  ctx?: AIRequestContext,
+  iteration?: number
 ): Promise<ClaudeResponse> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error('ANTHROPIC_API_KEY is not configured');
   }
+
+  const callStart = Date.now();
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -70,10 +76,36 @@ export async function callClaude(
 
   if (!response.ok) {
     const errorText = await response.text();
+    if (ctx) {
+      logger.error('ai.claude.error', {
+        requestId: ctx.requestId,
+        iteration,
+        durationMs: Date.now() - callStart,
+        statusCode: response.status,
+      });
+    }
     throw new Error(`Claude API error (${response.status}): ${errorText}`);
   }
 
-  return response.json() as Promise<ClaudeResponse>;
+  const result = (await response.json()) as ClaudeResponse;
+
+  if (ctx) {
+    const toolUseBlocks = result.content.filter(
+      (b) => b.type === 'tool_use'
+    );
+    logger.info('ai.claude.call', {
+      requestId: ctx.requestId,
+      iteration,
+      durationMs: Date.now() - callStart,
+      inputTokens: result.usage.input_tokens,
+      outputTokens: result.usage.output_tokens,
+      stopReason: result.stop_reason,
+      toolCallCount: toolUseBlocks.length,
+      model: result.model,
+    });
+  }
+
+  return result;
 }
 
 export async function processAIMessage(
@@ -81,10 +113,14 @@ export async function processAIMessage(
   boardId: string,
   userId: string,
   boardState: BoardStateSummary[],
-  viewportCenter?: { x: number; y: number }
+  viewportCenter?: { x: number; y: number },
+  ctx?: AIRequestContext
 ): Promise<{ reply: string; toolCalls: ToolCallResult[] }> {
   const systemPrompt = buildSystemPrompt(boardState, viewportCenter);
   const allToolCalls: ToolCallResult[] = [];
+  const loopStart = Date.now();
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
 
   const messages: ClaudeMessage[] = [
     { role: 'user', content: userMessage },
@@ -95,7 +131,15 @@ export async function processAIMessage(
   while (iterations < MAX_TOOL_ITERATIONS) {
     iterations++;
 
-    const response = await callClaude(messages, systemPrompt);
+    const response = await callClaude(
+      messages,
+      systemPrompt,
+      ctx,
+      iterations
+    );
+
+    totalInputTokens += response.usage.input_tokens;
+    totalOutputTokens += response.usage.output_tokens;
 
     // Extract text blocks and tool use blocks
     const textBlocks = response.content.filter(
@@ -108,6 +152,19 @@ export async function processAIMessage(
     // If no tool calls, return the text response
     if (response.stop_reason !== 'tool_use' || toolUseBlocks.length === 0) {
       const reply = textBlocks.map((b) => b.text).join('\n') || '';
+
+      if (ctx) {
+        logger.info('ai.loop.complete', {
+          requestId: ctx.requestId,
+          totalIterations: iterations,
+          totalToolCalls: allToolCalls.length,
+          totalInputTokens,
+          totalOutputTokens,
+          totalDurationMs: Date.now() - loopStart,
+          hitMaxIterations: false,
+        });
+      }
+
       return { reply, toolCalls: allToolCalls };
     }
 
@@ -119,7 +176,8 @@ export async function processAIMessage(
         toolUse.name,
         toolUse.input,
         boardId,
-        userId
+        userId,
+        ctx
       );
       allToolCalls.push(result);
 
@@ -138,6 +196,18 @@ export async function processAIMessage(
     messages.push({
       role: 'user',
       content: toolResults as ClaudeContentBlock[],
+    });
+  }
+
+  if (ctx) {
+    logger.warn('ai.loop.complete', {
+      requestId: ctx.requestId,
+      totalIterations: iterations,
+      totalToolCalls: allToolCalls.length,
+      totalInputTokens,
+      totalOutputTokens,
+      totalDurationMs: Date.now() - loopStart,
+      hitMaxIterations: true,
     });
   }
 

@@ -269,6 +269,7 @@ export default function DashboardPage() {
                     onChange={(e) => setEditName(e.target.value)}
                     onBlur={() => handleRenameBoard(board.id)}
                     onKeyDown={(e) => {
+                      e.stopPropagation();
                       if (e.key === 'Enter') handleRenameBoard(board.id);
                       if (e.key === 'Escape') setEditingId(null);
                     }}

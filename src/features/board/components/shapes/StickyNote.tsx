@@ -17,6 +17,7 @@ interface StickyNoteProps {
   onDragEnd: (id: string, x: number, y: number) => void;
   onTextChange?: (id: string, text: string) => void;
   onTextInput?: (id: string, text: string) => void;
+  autoEdit?: boolean;
 }
 
 export default function StickyNote({
@@ -26,9 +27,12 @@ export default function StickyNote({
   onDragEnd,
   onTextChange,
   onTextInput,
+  autoEdit,
 }: StickyNoteProps) {
   const textRef = useRef<Konva.Text>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const autoEditTriggered = useRef(false);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
 
   const color =
     obj.properties.noteColor ||
@@ -47,34 +51,32 @@ export default function StickyNote({
     }
   }, [text, width, height, fontSize, fontStyle, textAlign]);
 
-  const handleDblClick = () => {
-    if (!onTextChange) return;
+  const openEditor = () => {
+    if (!onTextChange || isEditing) return;
     setIsEditing(true);
 
     const stage = textRef.current?.getStage();
     if (!stage) return;
 
     const textNode = textRef.current!;
-    const textPosition = textNode.absolutePosition();
+    const transform = textNode.getAbsoluteTransform().copy();
+    const attrs = transform.decompose();
     const stageContainer = stage.container();
-    const areaPosition = {
-      x: stageContainer.offsetLeft + textPosition.x,
-      y: stageContainer.offsetTop + textPosition.y,
-    };
-
-    const scale = stage.scaleX();
 
     // Wrapper div with flex centering to match verticalAlign="middle"
     const wrapper = document.createElement('div');
+    wrapperRef.current = wrapper;
     wrapper.style.position = 'absolute';
-    wrapper.style.top = areaPosition.y + 'px';
-    wrapper.style.left = areaPosition.x + 'px';
-    wrapper.style.width = (width - 20) * scale + 'px';
-    wrapper.style.height = (height - 20) * scale + 'px';
+    wrapper.style.top = stageContainer.offsetTop + attrs.y + 'px';
+    wrapper.style.left = stageContainer.offsetLeft + attrs.x + 'px';
+    wrapper.style.width = textNode.width() * attrs.scaleX + 'px';
+    wrapper.style.height = textNode.height() * attrs.scaleY + 'px';
     wrapper.style.display = 'flex';
     wrapper.style.alignItems = 'center';
     wrapper.style.justifyContent = 'center';
     wrapper.style.zIndex = '1000';
+    wrapper.style.transform = `rotate(${attrs.rotation}deg)`;
+    wrapper.style.transformOrigin = 'top left';
 
     const editable = document.createElement('div');
     editable.contentEditable = 'true';
@@ -82,7 +84,7 @@ export default function StickyNote({
     editable.style.maxHeight = '100%';
     editable.style.overflow = 'hidden';
     editable.style.outline = 'none';
-    editable.style.fontSize = fontSize * scale + 'px';
+    editable.style.fontSize = fontSize * attrs.scaleX + 'px';
     editable.style.fontFamily = obj.properties.fontFamily || 'sans-serif';
     editable.style.fontWeight = fontStyle.includes('bold') ? 'bold' : 'normal';
     editable.style.fontStyle = fontStyle.includes('italic') ? 'italic' : 'normal';
@@ -117,6 +119,7 @@ export default function StickyNote({
     const handleBlur = () => {
       onTextChange(obj.id, editable.innerText);
       wrapper.remove();
+      wrapperRef.current = null;
       setIsEditing(false);
     };
 
@@ -132,6 +135,37 @@ export default function StickyNote({
       }
     });
   };
+
+  // Auto-enter edit mode for newly created sticky notes
+  React.useEffect(() => {
+    if (autoEdit && !autoEditTriggered.current) {
+      autoEditTriggered.current = true;
+      requestAnimationFrame(() => openEditor());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoEdit]);
+
+  // Close editor when deselected
+  useEffect(() => {
+    if (!isSelected && isEditing && wrapperRef.current) {
+      const editable = wrapperRef.current.querySelector(
+        '[contenteditable]'
+      ) as HTMLElement;
+      if (editable) {
+        editable.blur();
+      }
+    }
+  }, [isSelected, isEditing]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (wrapperRef.current) {
+        wrapperRef.current.remove();
+        wrapperRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <Group
@@ -151,8 +185,8 @@ export default function StickyNote({
       onDragEnd={(e) => {
         onDragEnd(obj.id, e.target.x(), e.target.y());
       }}
-      onDblClick={handleDblClick}
-      onDblTap={handleDblClick}
+      onDblClick={openEditor}
+      onDblTap={openEditor}
     >
       {/* Shadow */}
       <Rect

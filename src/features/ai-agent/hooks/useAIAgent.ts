@@ -73,6 +73,18 @@ export function useAIAgent(boardId: string) {
           }
         }
 
+        // Remove deleted objects from local store
+        if (data.deletedObjectIds && data.deletedObjectIds.length > 0) {
+          const store = useBoardObjects.getState();
+          for (const id of data.deletedObjectIds) {
+            store.deleteObject(id);
+            broadcastToLiveChannel('object_delete', {
+              id,
+              senderId: store.userId,
+            });
+          }
+        }
+
         const assistantMessage: AIMessage = {
           id: loadingMessage.id,
           role: 'assistant',

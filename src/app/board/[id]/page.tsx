@@ -60,7 +60,11 @@ export default function BoardPage({
     if (!loading && userId && userName) {
       trackBoard(boardId, userId, userName);
     }
+    // Untrack on tab close since React cleanup doesn't reliably fire
+    const handleBeforeUnload = () => untrackBoard();
+    window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
       untrackBoard();
     };
   }, [loading, boardId, userId, userName, trackBoard, untrackBoard]);

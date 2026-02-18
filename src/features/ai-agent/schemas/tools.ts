@@ -259,6 +259,21 @@ export const AI_TOOLS: ClaudeToolDefinition[] = [
     },
   },
   {
+    name: 'deleteObject',
+    description:
+      'Delete an existing object from the whiteboard. Use this to remove sticky notes, shapes, frames, connectors, or any other object.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        objectId: {
+          type: 'string',
+          description: 'The ID of the object to delete',
+        },
+      },
+      required: ['objectId'],
+    },
+  },
+  {
     name: 'getBoardState',
     description:
       'Get the current state of all objects on the whiteboard. Use this to understand what is already on the board before making changes.',

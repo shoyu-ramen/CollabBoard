@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
-import { Group, Text } from 'react-konva';
+import React, { useRef, useEffect, useState } from 'react';
+import { Group, Rect, Text } from 'react-konva';
 import type Konva from 'konva';
 import type { WhiteboardObject } from '../../types';
 import {
+  DEFAULT_TEXT_WIDTH,
+  DEFAULT_TEXT_HEIGHT,
   DEFAULT_TEXT_FONT_SIZE,
   DEFAULT_TEXT_COLOR,
   DEFAULT_TEXT_FONT_FAMILY,
@@ -32,40 +34,52 @@ export default function TextBox({
   const textRef = useRef<Konva.Text>(null);
   const [isEditing, setIsEditing] = useState(false);
   const autoEditTriggered = useRef(false);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
 
   const text = obj.properties.text || '';
   const fontSize = obj.properties.fontSize || DEFAULT_TEXT_FONT_SIZE;
   const fontStyle = obj.properties.fontStyle || 'normal';
   const fontFamily = obj.properties.fontFamily || DEFAULT_TEXT_FONT_FAMILY;
   const color = obj.properties.color || DEFAULT_TEXT_COLOR;
-  const textAlign = obj.properties.textAlign || 'left';
+  const textAlign = obj.properties.textAlign || 'center';
+  const width = obj.width || DEFAULT_TEXT_WIDTH;
+  const height = obj.height || DEFAULT_TEXT_HEIGHT;
+  const padding = 10;
 
   const openEditor = () => {
-    if (!onTextChange) return;
+    if (!onTextChange || isEditing) return;
     setIsEditing(true);
 
     const stage = textRef.current?.getStage();
     if (!stage) return;
 
     const textNode = textRef.current!;
-    const textPosition = textNode.absolutePosition();
+    const transform = textNode.getAbsoluteTransform().copy();
+    const attrs = transform.decompose();
     const stageContainer = stage.container();
-    const areaPosition = {
-      x: stageContainer.offsetLeft + textPosition.x,
-      y: stageContainer.offsetTop + textPosition.y,
-    };
 
-    const scale = stage.scaleX();
+    // Wrapper div with flex centering to match verticalAlign="middle"
+    const wrapper = document.createElement('div');
+    wrapperRef.current = wrapper;
+    wrapper.style.position = 'absolute';
+    wrapper.style.top = stageContainer.offsetTop + attrs.y + 'px';
+    wrapper.style.left = stageContainer.offsetLeft + attrs.x + 'px';
+    wrapper.style.width = textNode.width() * attrs.scaleX + 'px';
+    wrapper.style.height = textNode.height() * attrs.scaleY + 'px';
+    wrapper.style.display = 'flex';
+    wrapper.style.alignItems = 'center';
+    wrapper.style.justifyContent = 'center';
+    wrapper.style.zIndex = '1000';
+    wrapper.style.transform = `rotate(${attrs.rotation}deg)`;
+    wrapper.style.transformOrigin = 'top left';
 
     const editable = document.createElement('div');
     editable.contentEditable = 'true';
-    editable.style.position = 'absolute';
-    editable.style.top = areaPosition.y + 'px';
-    editable.style.left = areaPosition.x + 'px';
-    editable.style.minWidth = '60px';
-    editable.style.maxWidth = '600px';
+    editable.style.width = '100%';
+    editable.style.maxHeight = '100%';
+    editable.style.overflow = 'hidden';
     editable.style.outline = 'none';
-    editable.style.fontSize = fontSize * scale + 'px';
+    editable.style.fontSize = fontSize * attrs.scaleX + 'px';
     editable.style.fontFamily = fontFamily;
     editable.style.fontWeight = fontStyle.includes('bold') ? 'bold' : 'normal';
     editable.style.fontStyle = fontStyle.includes('italic') ? 'italic' : 'normal';
@@ -73,14 +87,10 @@ export default function TextBox({
     editable.style.color = color;
     editable.style.wordBreak = 'break-word';
     editable.style.whiteSpace = 'pre-wrap';
-    editable.style.zIndex = '1000';
-    editable.style.background = 'transparent';
-    editable.style.border = '2px solid #3B82F6';
-    editable.style.borderRadius = '2px';
-    editable.style.padding = '2px 4px';
     editable.innerText = text;
 
-    stageContainer.parentElement?.appendChild(editable);
+    wrapper.appendChild(editable);
+    stageContainer.parentElement?.appendChild(wrapper);
 
     editable.focus();
     const sel = window.getSelection();
@@ -92,10 +102,18 @@ export default function TextBox({
       sel.addRange(range);
     }
 
+    // Clicking the wrapper padding keeps focus on editable
+    wrapper.addEventListener('mousedown', (e) => {
+      if (e.target === wrapper) {
+        e.preventDefault();
+        editable.focus();
+      }
+    });
+
     const handleBlur = () => {
-      const newText = editable.innerText;
-      onTextChange(obj.id, newText);
-      editable.remove();
+      onTextChange(obj.id, editable.innerText);
+      wrapper.remove();
+      wrapperRef.current = null;
       setIsEditing(false);
     };
 
@@ -122,11 +140,35 @@ export default function TextBox({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoEdit]);
 
+  // Close editor when deselected
+  useEffect(() => {
+    if (!isSelected && isEditing && wrapperRef.current) {
+      const editable = wrapperRef.current.querySelector(
+        '[contenteditable]'
+      ) as HTMLElement;
+      if (editable) {
+        editable.blur();
+      }
+    }
+  }, [isSelected, isEditing]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (wrapperRef.current) {
+        wrapperRef.current.remove();
+        wrapperRef.current = null;
+      }
+    };
+  }, []);
+
   return (
     <Group
       id={obj.id}
       x={obj.x}
       y={obj.y}
+      width={width}
+      height={height}
       rotation={obj.rotation}
       draggable
       onClick={(e) => {
@@ -141,29 +183,28 @@ export default function TextBox({
       onDblClick={openEditor}
       onDblTap={openEditor}
     >
-      {/* Selection highlight */}
-      {isSelected && (
-        <Text
-          text={text || 'Type here...'}
-          fontSize={fontSize}
-          fontFamily={fontFamily}
-          fontStyle={fontStyle}
-          align={textAlign}
-          fill="transparent"
-          stroke="#3B82F6"
-          strokeWidth={0.5}
-          listening={false}
-        />
-      )}
+      {/* Hit area — transparent, no self-drawn selection (Transformer handles it) */}
+      <Rect
+        width={width}
+        height={height}
+        fill="transparent"
+      />
+      {/* Text content */}
       <Text
         ref={textRef}
+        x={padding}
+        y={padding}
+        width={width - padding * 2}
+        height={height - padding * 2}
         text={text || 'Type here...'}
         fontSize={fontSize}
         fontFamily={fontFamily}
         fontStyle={fontStyle}
         align={textAlign}
+        verticalAlign="middle"
         fill={text ? color : '#9CA3AF'}
         wrap="word"
+        ellipsis
         visible={!isEditing}
         listening={false}
       />

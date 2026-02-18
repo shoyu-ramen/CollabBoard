@@ -38,6 +38,8 @@ export const DEFAULT_FRAME_WIDTH = 400;
 export const DEFAULT_FRAME_HEIGHT = 300;
 
 // Text defaults
+export const DEFAULT_TEXT_WIDTH = 200;
+export const DEFAULT_TEXT_HEIGHT = 100;
 export const DEFAULT_TEXT_FONT_SIZE = 20;
 export const DEFAULT_TEXT_COLOR = '#1a1a1a';
 export const DEFAULT_TEXT_FONT_FAMILY = 'sans-serif';

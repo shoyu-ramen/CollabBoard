@@ -1,7 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { createServiceClient } from '@/lib/supabase/server';
+import { logger } from '@/lib/logger';
 import type { ObjectType } from '@/features/board/types';
-import type { ToolCallResult, BoardStateSummary } from '../types';
+import type { ToolCallResult, BoardStateSummary, AIRequestContext } from '../types';
 import {
   DEFAULT_STICKY_WIDTH,
   DEFAULT_STICKY_HEIGHT,
@@ -112,6 +113,42 @@ async function insertObject(
 }
 
 export async function executeTool(
+  toolName: string,
+  input: Record<string, unknown>,
+  boardId: string,
+  userId: string,
+  ctx?: AIRequestContext
+): Promise<ToolCallResult> {
+  const toolStart = Date.now();
+  const result = await executeToolInner(toolName, input, boardId, userId);
+  const durationMs = Date.now() - toolStart;
+  const success = !result.result.startsWith('Error');
+
+  if (ctx) {
+    if (success) {
+      logger.info('ai.tool.execute', {
+        requestId: ctx.requestId,
+        toolName,
+        durationMs,
+        success,
+        objectId: result.objectId,
+        boardId,
+      });
+    } else {
+      logger.warn('ai.tool.error', {
+        requestId: ctx.requestId,
+        toolName,
+        durationMs,
+        error: result.result,
+        boardId,
+      });
+    }
+  }
+
+  return result;
+}
+
+async function executeToolInner(
   toolName: string,
   input: Record<string, unknown>,
   boardId: string,
@@ -592,6 +629,30 @@ export async function executeTool(
         toolName,
         input,
         result: `Changed color of object ${objectId} to ${color}`,
+        objectId,
+      };
+    }
+
+    case 'deleteObject': {
+      const objectId = input.objectId as string;
+
+      const { error } = await supabase
+        .from('whiteboard_objects')
+        .delete()
+        .eq('id', objectId)
+        .eq('board_id', boardId);
+
+      if (error) {
+        return {
+          toolName,
+          input,
+          result: `Error deleting object: ${error.message}`,
+        };
+      }
+      return {
+        toolName,
+        input,
+        result: `Deleted object ${objectId}`,
         objectId,
       };
     }

@@ -34,22 +34,19 @@ export default function Frame({
     if (!stage) return;
 
     const textNode = titleRef.current!;
-    const textPosition = textNode.absolutePosition();
+    const transform = textNode.getAbsoluteTransform().copy();
+    const attrs = transform.decompose();
     const stageContainer = stage.container();
-    const areaPosition = {
-      x: stageContainer.offsetLeft + textPosition.x,
-      y: stageContainer.offsetTop + textPosition.y,
-    };
-
-    const scale = stage.scaleX();
 
     const input = document.createElement('input');
     input.type = 'text';
     input.value = title;
     input.style.position = 'absolute';
-    input.style.top = areaPosition.y - 2 + 'px';
-    input.style.left = areaPosition.x - 4 + 'px';
-    input.style.fontSize = 14 * scale + 'px';
+    input.style.top = stageContainer.offsetTop + attrs.y - 2 + 'px';
+    input.style.left = stageContainer.offsetLeft + attrs.x - 4 + 'px';
+    input.style.fontSize = 14 * attrs.scaleX + 'px';
+    input.style.transform = `rotate(${attrs.rotation}deg)`;
+    input.style.transformOrigin = 'top left';
     input.style.fontFamily = 'sans-serif';
     input.style.fontWeight = 'bold';
     input.style.color = '#64748B';

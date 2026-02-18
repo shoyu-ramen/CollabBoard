@@ -11,12 +11,13 @@ const EXPECTED_TOOL_NAMES = [
   'resizeObject',
   'updateText',
   'changeColor',
+  'deleteObject',
   'getBoardState',
 ];
 
 describe('AI_TOOLS schema', () => {
-  it('has exactly 10 tools', () => {
-    expect(AI_TOOLS).toHaveLength(10);
+  it('has exactly 11 tools', () => {
+    expect(AI_TOOLS).toHaveLength(11);
   });
 
   it('contains all expected tool names', () => {
