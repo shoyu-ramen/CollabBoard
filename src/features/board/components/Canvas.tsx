@@ -200,9 +200,8 @@ export default function Canvas({
   useEffect(() => {
     if (stageRef.current) {
       setStageRef(stageRef.current);
-      if (process.env.NODE_ENV !== 'production') {
-        (window as unknown as Record<string, unknown>).__KONVA_STAGE__ = stageRef.current;
-      }
+      // Expose stage ref for E2E tests (Playwright reads Konva shapes via this)
+      (window as unknown as Record<string, unknown>).__KONVA_STAGE__ = stageRef.current;
     }
   }, [setStageRef]);
 
