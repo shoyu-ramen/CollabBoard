@@ -47,6 +47,7 @@ jobs:
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: ci
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
@@ -68,16 +69,29 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check required secrets
+        env:
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SERVICE_KEY" ]; then
+            echo "::warning::Supabase secrets not configured — skipping E2E tests"
+            echo "SKIP_E2E=true" >> "$GITHUB_ENV"
+          fi
+
       - name: Install Playwright browsers
+        if: env.SKIP_E2E != 'true'
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Build
+        if: env.SKIP_E2E != 'true'
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
         run: pnpm build
 
       - name: Run E2E tests
+        if: env.SKIP_E2E != 'true'
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
