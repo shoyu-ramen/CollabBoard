@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { LoginForm } from '@/features/auth/components/LoginForm';
 
 export const metadata = {
@@ -15,7 +16,9 @@ export default function LoginPage() {
           Welcome back! Sign in to continue.
         </p>
       </div>
-      <LoginForm />
+      <Suspense>
+        <LoginForm />
+      </Suspense>
     </>
   );
 }
