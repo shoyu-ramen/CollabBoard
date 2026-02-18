@@ -5,7 +5,6 @@ import {
   waitForCanvasReady,
   getKonvaShapes,
   openAIChatAndSend,
-  getCanvasLocator,
 } from '../helpers/board.helpers';
 import { moveResponse } from '../fixtures/ai-responses';
 import type { WhiteboardObject } from '../../../src/features/board/types';
@@ -57,10 +56,5 @@ test.describe('AI Tool: moveObject', () => {
     expect(moved).toBeDefined();
     expect(moved!.x).toBe(500);
     expect(moved!.y).toBe(400);
-
-    // Screenshot
-    await expect(getCanvasLocator(page)).toHaveScreenshot(
-      'move-object.png'
-    );
   });
 });

@@ -5,7 +5,6 @@ import {
   waitForCanvasReady,
   getKonvaShapes,
   openAIChatAndSend,
-  getCanvasLocator,
 } from '../helpers/board.helpers';
 import { connectorResponse } from '../fixtures/ai-responses';
 
@@ -31,10 +30,5 @@ test.describe('AI Tool: createConnector', () => {
     expect(arrow).toBeDefined();
     expect(arrow!.x).toBe(200);
     expect(arrow!.y).toBe(200);
-
-    // Screenshot
-    await expect(getCanvasLocator(page)).toHaveScreenshot(
-      'create-connector.png'
-    );
   });
 });

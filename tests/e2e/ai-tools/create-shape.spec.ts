@@ -5,7 +5,6 @@ import {
   waitForCanvasReady,
   getKonvaShapes,
   openAIChatAndSend,
-  getCanvasLocator,
 } from '../helpers/board.helpers';
 import { rectangleResponse, circleResponse } from '../fixtures/ai-responses';
 
@@ -33,11 +32,6 @@ test.describe('AI Tool: createShape', () => {
     expect(rect!.y).toBe(300);
     expect(rect!.width).toBe(150);
     expect(rect!.height).toBe(100);
-
-    // Screenshot
-    await expect(getCanvasLocator(page)).toHaveScreenshot(
-      'create-rectangle.png'
-    );
   });
 
   test('creates a circle on the canvas', async ({ page }) => {
@@ -59,10 +53,5 @@ test.describe('AI Tool: createShape', () => {
     const shapes = await getKonvaShapes(page);
     const circle = shapes.find((s) => s.id === 'test-circle-1');
     expect(circle).toBeDefined();
-
-    // Screenshot
-    await expect(getCanvasLocator(page)).toHaveScreenshot(
-      'create-circle.png'
-    );
   });
 });

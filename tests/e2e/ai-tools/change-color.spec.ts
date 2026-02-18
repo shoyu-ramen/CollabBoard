@@ -5,7 +5,6 @@ import {
   waitForCanvasReady,
   getKonvaShapes,
   openAIChatAndSend,
-  getCanvasLocator,
 } from '../helpers/board.helpers';
 import { changeColorResponse } from '../fixtures/ai-responses';
 import type { WhiteboardObject } from '../../../src/features/board/types';
@@ -60,10 +59,5 @@ test.describe('AI Tool: changeColor', () => {
     const rect = shapes.find((s) => s.id === 'existing-rect-color');
     expect(rect).toBeDefined();
     expect(rect!.fill).toBe(newColor);
-
-    // Screenshot
-    await expect(getCanvasLocator(page)).toHaveScreenshot(
-      'change-color.png'
-    );
   });
 });

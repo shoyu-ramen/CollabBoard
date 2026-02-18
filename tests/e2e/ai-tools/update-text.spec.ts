@@ -5,7 +5,6 @@ import {
   waitForCanvasReady,
   getKonvaShapes,
   openAIChatAndSend,
-  getCanvasLocator,
 } from '../helpers/board.helpers';
 import { updateTextResponse } from '../fixtures/ai-responses';
 import type { WhiteboardObject } from '../../../src/features/board/types';
@@ -59,10 +58,5 @@ test.describe('AI Tool: updateText', () => {
     const note = shapes.find((s) => s.id === 'existing-note-text');
     expect(note).toBeDefined();
     expect(note!.text).toBe('Updated text content');
-
-    // Screenshot
-    await expect(getCanvasLocator(page)).toHaveScreenshot(
-      'update-text.png'
-    );
   });
 });

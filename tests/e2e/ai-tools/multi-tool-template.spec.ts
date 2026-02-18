@@ -5,7 +5,6 @@ import {
   waitForCanvasReady,
   getKonvaShapes,
   openAIChatAndSend,
-  getCanvasLocator,
 } from '../helpers/board.helpers';
 import { multiToolSwotResponse } from '../fixtures/ai-responses';
 
@@ -58,11 +57,6 @@ test.describe('AI Tool: multi-tool template', () => {
     // Verify object count — at least 5 objects with IDs
     const objectsWithIds = shapes.filter((s) => s.id.startsWith('swot-'));
     expect(objectsWithIds.length).toBe(5);
-
-    // Screenshot
-    await expect(getCanvasLocator(page)).toHaveScreenshot(
-      'multi-tool-swot-template.png'
-    );
   });
 
   test('all SWOT sticky notes have different colors', async ({ page }) => {

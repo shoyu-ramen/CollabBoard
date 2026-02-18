@@ -138,6 +138,8 @@ export default function StickyNote({
       id={obj.id}
       x={obj.x}
       y={obj.y}
+      width={width}
+      height={height}
       rotation={obj.rotation}
       draggable
       onClick={(e) => {

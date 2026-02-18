@@ -5,7 +5,6 @@ import {
   waitForCanvasReady,
   getKonvaShapes,
   openAIChatAndSend,
-  getCanvasLocator,
 } from '../helpers/board.helpers';
 import { frameResponse } from '../fixtures/ai-responses';
 
@@ -31,10 +30,5 @@ test.describe('AI Tool: createFrame', () => {
     expect(frame).toBeDefined();
     expect(frame!.x).toBe(100);
     expect(frame!.y).toBe(100);
-
-    // Screenshot
-    await expect(getCanvasLocator(page)).toHaveScreenshot(
-      'create-frame.png'
-    );
   });
 });

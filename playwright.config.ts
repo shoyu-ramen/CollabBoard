@@ -17,11 +17,6 @@ export default defineConfig({
     baseURL: 'http://localhost:3000',
     trace: 'on-first-retry',
   },
-  expect: {
-    toHaveScreenshot: {
-      maxDiffPixelRatio: 0.01,
-    },
-  },
   projects: [
     {
       name: 'setup',

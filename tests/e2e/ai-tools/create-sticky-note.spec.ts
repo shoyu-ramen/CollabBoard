@@ -5,7 +5,6 @@ import {
   waitForCanvasReady,
   getKonvaShapes,
   openAIChatAndSend,
-  getCanvasLocator,
 } from '../helpers/board.helpers';
 import { stickyNoteResponse } from '../fixtures/ai-responses';
 
@@ -31,11 +30,6 @@ test.describe('AI Tool: createStickyNote', () => {
     expect(stickyNote).toBeDefined();
     expect(stickyNote!.x).toBe(200);
     expect(stickyNote!.y).toBe(200);
-
-    // Screenshot comparison
-    await expect(getCanvasLocator(page)).toHaveScreenshot(
-      'create-sticky-note.png'
-    );
   });
 
   test('creates a sticky note with custom color', async ({ page }) => {

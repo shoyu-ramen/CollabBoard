@@ -184,10 +184,10 @@ test.describe('Canvas interactions', () => {
     });
     expect(hasTransformer).toBe(true);
 
-    // Click on empty area (far from the object)
+    // Click on empty area (far from the object but within canvas bounds)
     await page.mouse.click(
-      canvasBox!.x + 700,
-      canvasBox!.y + 700
+      canvasBox!.x + Math.min(600, canvasBox!.width - 20),
+      canvasBox!.y + 50
     );
     await page.waitForTimeout(300);
 

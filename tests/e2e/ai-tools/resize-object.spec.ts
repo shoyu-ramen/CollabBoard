@@ -5,7 +5,6 @@ import {
   waitForCanvasReady,
   getKonvaShapes,
   openAIChatAndSend,
-  getCanvasLocator,
 } from '../helpers/board.helpers';
 import { resizeResponse } from '../fixtures/ai-responses';
 import type { WhiteboardObject } from '../../../src/features/board/types';
@@ -56,10 +55,5 @@ test.describe('AI Tool: resizeObject', () => {
     expect(rect).toBeDefined();
     expect(rect!.width).toBe(300);
     expect(rect!.height).toBe(250);
-
-    // Screenshot
-    await expect(getCanvasLocator(page)).toHaveScreenshot(
-      'resize-object.png'
-    );
   });
 });

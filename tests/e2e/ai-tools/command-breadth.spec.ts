@@ -85,7 +85,7 @@ test.describe('AI command breadth', () => {
 
     // Verify the AI reply is shown
     await expect(
-      page.locator('text=Moved object to (500, 400)')
+      page.locator('text=Moved object to (500, 400)').first()
     ).toBeVisible({ timeout: 5000 });
   });
 
@@ -117,7 +117,7 @@ test.describe('AI command breadth', () => {
 
     // Verify the AI reply is shown
     await expect(
-      page.locator('text=Changed color to #FF0000')
+      page.locator('text=Changed color to #FF0000').first()
     ).toBeVisible({ timeout: 5000 });
   });
 
