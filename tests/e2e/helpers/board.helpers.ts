@@ -12,11 +12,20 @@ export async function mockEmptyBoard(
   preloadedObjects: WhiteboardObject[] = []
 ) {
   // Mock the board persistence API (auto-join)
-  await page.route('**/api/boards/*/join', (route) =>
+  await page.route('**/api/boards/join', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ role: 'editor' }),
+      body: JSON.stringify({ success: true, visibility: 'public' }),
+    })
+  );
+
+  // Mock the members API
+  await page.route('**/api/boards/members**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ members: [{ user_id: 'test-user', email: 'test@test.com', role: 'owner' }] }),
     })
   );
 
