@@ -17,7 +17,6 @@ interface StickyNoteProps {
   onDragEnd: (id: string, x: number, y: number) => void;
   onTextChange?: (id: string, text: string) => void;
   onTextInput?: (id: string, text: string) => void;
-  autoEdit?: boolean;
 }
 
 export default function StickyNote({
@@ -27,11 +26,9 @@ export default function StickyNote({
   onDragEnd,
   onTextChange,
   onTextInput,
-  autoEdit,
 }: StickyNoteProps) {
   const textRef = useRef<Konva.Text>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const autoEditTriggered = useRef(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
   const color =
@@ -135,15 +132,6 @@ export default function StickyNote({
       }
     });
   };
-
-  // Auto-enter edit mode for newly created sticky notes
-  React.useEffect(() => {
-    if (autoEdit && !autoEditTriggered.current) {
-      autoEditTriggered.current = true;
-      requestAnimationFrame(() => openEditor());
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoEdit]);
 
   // Close editor when deselected
   useEffect(() => {

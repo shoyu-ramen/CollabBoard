@@ -10,6 +10,7 @@ export function useBoardPersistence(
 ) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [boardVisibility, setBoardVisibility] = useState<'public' | 'private'>('public');
   const { setObjects, setBoardContext } = useBoardObjects();
   const joinedRef = useRef(false);
 
@@ -28,11 +29,30 @@ export function useBoardPersistence(
       // Ensure the current user is a board member via server-side API
       // (uses service role to bypass RLS)
       if (!joinedRef.current) {
-        await fetch('/api/boards/join', {
+        const joinRes = await fetch('/api/boards/join', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ boardId }),
         });
+
+        if (!joinRes.ok) {
+          const body = await joinRes.json().catch(() => ({}));
+          if (joinRes.status === 403) {
+            throw new Error(
+              'Access denied: this board is private'
+            );
+          }
+          if (joinRes.status === 404) {
+            throw new Error('Board not found');
+          }
+          throw new Error(
+            body.error || 'Failed to join board'
+          );
+        }
+        const joinData = await joinRes.json();
+        if (joinData.visibility) {
+          setBoardVisibility(joinData.visibility);
+        }
         joinedRef.current = true;
       }
 
@@ -81,5 +101,5 @@ export function useBoardPersistence(
     };
   }, [softReload]);
 
-  return { loading, error, reload: loadObjects };
+  return { loading, error, reload: loadObjects, boardVisibility };
 }

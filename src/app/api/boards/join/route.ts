@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     // Verify board exists
     const { data: board, error: boardError } = await serviceClient
       .from('boards')
-      .select('id')
+      .select('id, visibility, created_by')
       .eq('id', boardId)
       .single();
 
@@ -40,6 +40,23 @@ export async function POST(request: Request) {
         { error: 'Board not found' },
         { status: 404 }
       );
+    }
+
+    // Private boards: only the owner or existing members
+    if (board.visibility === 'private' && board.created_by !== user.id) {
+      const { data: existing } = await serviceClient
+        .from('board_members')
+        .select('board_id')
+        .eq('board_id', boardId)
+        .eq('user_id', user.id)
+        .single();
+
+      if (!existing) {
+        return NextResponse.json(
+          { error: 'This board is private' },
+          { status: 403 }
+        );
+      }
     }
 
     // Add user as editor (ignore if already a member)
@@ -57,7 +74,7 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, visibility: board.visibility });
   } catch {
     return NextResponse.json(
       { error: 'Internal server error' },

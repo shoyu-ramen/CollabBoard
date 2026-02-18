@@ -19,7 +19,6 @@ interface TextBoxProps {
   onDragEnd: (id: string, x: number, y: number) => void;
   onTextChange?: (id: string, text: string) => void;
   onTextInput?: (id: string, text: string) => void;
-  autoEdit?: boolean;
 }
 
 export default function TextBox({
@@ -29,11 +28,9 @@ export default function TextBox({
   onDragEnd,
   onTextChange,
   onTextInput,
-  autoEdit,
 }: TextBoxProps) {
   const textRef = useRef<Konva.Text>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const autoEditTriggered = useRef(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
   const text = obj.properties.text || '';
@@ -129,16 +126,6 @@ export default function TextBox({
       }
     });
   };
-
-  // Auto-enter edit mode for newly created text objects
-  React.useEffect(() => {
-    if (autoEdit && !autoEditTriggered.current) {
-      autoEditTriggered.current = true;
-      // Small delay to let the Konva node mount
-      requestAnimationFrame(() => openEditor());
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoEdit]);
 
   // Close editor when deselected
   useEffect(() => {

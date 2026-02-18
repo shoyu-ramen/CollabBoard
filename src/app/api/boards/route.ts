@@ -17,9 +17,8 @@ export async function GET() {
       );
     }
 
-    // All boards are public — return every board for any authenticated user
-    const serviceClient = await createServiceClient();
-    const { data, error } = await serviceClient
+    // Fetch all boards the user can see via RLS
+    const { data, error } = await supabase
       .from('boards')
       .select('*')
       .order('created_at', { ascending: false });
@@ -31,8 +30,30 @@ export async function GET() {
       );
     }
 
-    // Resolve creator emails
-    const creatorIds = [...new Set((data ?? []).map((b) => b.created_by))];
+    // Defense-in-depth: filter out private boards the user doesn't own
+    // and isn't a member of, in case RLS policies are misconfigured
+    const serviceClient = await createServiceClient();
+    const allBoards = data ?? [];
+
+    const { data: memberships } = await serviceClient
+      .from('board_members')
+      .select('board_id')
+      .eq('user_id', user.id);
+    const memberBoardIds = new Set(
+      (memberships ?? []).map((m) => m.board_id)
+    );
+
+    const visibleBoards = allBoards.filter(
+      (b) =>
+        b.visibility === 'public' ||
+        b.created_by === user.id ||
+        memberBoardIds.has(b.id)
+    );
+
+    // Resolve creator emails (requires service client for admin API)
+    const creatorIds = [
+      ...new Set(visibleBoards.map((b) => b.created_by)),
+    ];
     const emailMap: Record<string, string> = {};
     await Promise.all(
       creatorIds.map(async (id) => {
@@ -44,7 +65,7 @@ export async function GET() {
       })
     );
 
-    const boards = (data ?? []).map((b) => ({
+    const boards = visibleBoards.map((b) => ({
       ...b,
       creator_email: emailMap[b.created_by] ?? null,
     }));
@@ -78,13 +99,15 @@ export async function POST(request: Request) {
       body.name && typeof body.name === 'string'
         ? body.name.trim()
         : generateBoardName();
+    const visibility =
+      body.visibility === 'private' ? 'private' : 'public';
 
     // Use service client to bypass RLS (auth already verified above)
     // The trigger auto-adds creator as owner in board_members
     const serviceClient = await createServiceClient();
     const { data: board, error: boardError } = await serviceClient
       .from('boards')
-      .insert({ name, created_by: user.id })
+      .insert({ name, visibility, created_by: user.id })
       .select()
       .single();
 
@@ -120,11 +143,29 @@ export async function PATCH(request: Request) {
     }
 
     const body = await request.json();
-    const { id, name } = body;
+    const { id, name, visibility } = body;
 
-    if (!id || !name || typeof name !== 'string') {
+    if (!id) {
       return NextResponse.json(
-        { error: 'Board ID and name are required' },
+        { error: 'Board ID is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!name && !visibility) {
+      return NextResponse.json(
+        { error: 'Name or visibility is required' },
+        { status: 400 }
+      );
+    }
+
+    if (
+      visibility &&
+      visibility !== 'public' &&
+      visibility !== 'private'
+    ) {
+      return NextResponse.json(
+        { error: 'Visibility must be "public" or "private"' },
         { status: 400 }
       );
     }
@@ -145,14 +186,18 @@ export async function PATCH(request: Request) {
 
     if (board.created_by !== user.id) {
       return NextResponse.json(
-        { error: 'Only the board owner can rename it' },
+        { error: 'Only the board owner can update it' },
         { status: 403 }
       );
     }
 
+    const updates: Record<string, string> = {};
+    if (name && typeof name === 'string') updates.name = name.trim();
+    if (visibility) updates.visibility = visibility;
+
     const { data: updated, error: updateError } = await serviceClient
       .from('boards')
-      .update({ name: name.trim() })
+      .update(updates)
       .eq('id', id)
       .select()
       .single();

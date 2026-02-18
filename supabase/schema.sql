@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS boards (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL DEFAULT 'Untitled Board',
   created_by UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  visibility TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'private'))
 );
 
 -- Board members table (multi-tenancy)
@@ -59,10 +60,17 @@ RETURNS BOOLEAN AS $$
   );
 $$ LANGUAGE sql SECURITY DEFINER;
 
--- Boards: all authenticated users can see all boards (public boards)
-CREATE POLICY "Authenticated users can view all boards"
+-- Boards: public boards visible to all, private boards only to owner/members
+CREATE POLICY "Users can view public boards or their own boards"
   ON boards FOR SELECT
-  USING (auth.uid() IS NOT NULL);
+  USING (
+    auth.uid() IS NOT NULL
+    AND (
+      visibility = 'public'
+      OR created_by = auth.uid()
+      OR public.is_board_member(id, auth.uid())
+    )
+  );
 
 -- Boards: any authenticated user can create
 CREATE POLICY "Authenticated users can create boards"
@@ -79,10 +87,21 @@ CREATE POLICY "Board owners can update boards"
   ON boards FOR UPDATE
   USING (created_by = auth.uid());
 
--- Board members: all authenticated users can see members (public boards)
-CREATE POLICY "Authenticated users can view board members"
+-- Board members: visible only for accessible boards
+CREATE POLICY "Users can view members of accessible boards"
   ON board_members FOR SELECT
-  USING (auth.uid() IS NOT NULL);
+  USING (
+    auth.uid() IS NOT NULL
+    AND EXISTS (
+      SELECT 1 FROM boards
+      WHERE boards.id = board_members.board_id
+        AND (
+          boards.visibility = 'public'
+          OR boards.created_by = auth.uid()
+          OR public.is_board_member(boards.id, auth.uid())
+        )
+    )
+  );
 
 -- Board members: board owner can manage members
 CREATE POLICY "Board owners can manage members"
@@ -98,10 +117,21 @@ CREATE POLICY "Board owners can remove members"
     EXISTS (SELECT 1 FROM boards WHERE id = board_id AND created_by = auth.uid())
   );
 
--- Whiteboard objects: all authenticated users can view (public boards)
-CREATE POLICY "Authenticated users can view objects"
+-- Whiteboard objects: visible only for accessible boards
+CREATE POLICY "Users can view objects on accessible boards"
   ON whiteboard_objects FOR SELECT
-  USING (auth.uid() IS NOT NULL);
+  USING (
+    auth.uid() IS NOT NULL
+    AND EXISTS (
+      SELECT 1 FROM boards
+      WHERE boards.id = whiteboard_objects.board_id
+        AND (
+          boards.visibility = 'public'
+          OR boards.created_by = auth.uid()
+          OR public.is_board_member(boards.id, auth.uid())
+        )
+    )
+  );
 
 -- Whiteboard objects: editors and owners can create
 CREATE POLICY "Editors can create objects"

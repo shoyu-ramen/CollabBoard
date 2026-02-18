@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { BoardPresenceProvider } from '@/features/board/contexts/BoardPresenceProvider';
+import { ThemeProvider } from '@/components/ThemeProvider';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import './globals.css';
 
 const inter = Inter({
@@ -23,9 +25,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} font-sans antialiased`}>
-        <BoardPresenceProvider>{children}</BoardPresenceProvider>
+        <ThemeProvider>
+          <BoardPresenceProvider>{children}</BoardPresenceProvider>
+          <div className="fixed bottom-4 left-4 z-50">
+            <ThemeToggle />
+          </div>
+        </ThemeProvider>
       </body>
     </html>
   );

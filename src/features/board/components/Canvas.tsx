@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTheme } from 'next-themes';
 import { Stage, Layer, Rect, Line, Ellipse, Arrow, Circle as KonvaCircle } from 'react-konva';
 import type Konva from 'konva';
 import { v4 as uuidv4 } from 'uuid';
@@ -58,7 +59,8 @@ interface DrawingPreview {
 const GRID_SIZE = 50;
 const ANCHOR_SNAP_RADIUS = 15;
 
-function GridLayer({ width, height }: { width: number; height: number }) {
+function GridLayer({ width, height, isDark }: { width: number; height: number; isDark: boolean }) {
+  const gridStroke = isDark ? '#1f2937' : '#e5e7eb';
   const lines = useMemo(() => {
     const result: React.ReactElement[] = [];
     const w = width * 3;
@@ -68,7 +70,7 @@ function GridLayer({ width, height }: { width: number; height: number }) {
         <Line
           key={`v-${i}`}
           points={[i, -h, i, h]}
-          stroke="#e5e7eb"
+          stroke={gridStroke}
           strokeWidth={1}
           listening={false}
         />
@@ -79,14 +81,14 @@ function GridLayer({ width, height }: { width: number; height: number }) {
         <Line
           key={`h-${j}`}
           points={[-w, j, w, j]}
-          stroke="#e5e7eb"
+          stroke={gridStroke}
           strokeWidth={1}
           listening={false}
         />
       );
     }
     return result;
-  }, [width, height]);
+  }, [width, height, gridStroke]);
 
   return <>{lines}</>;
 }
@@ -102,6 +104,8 @@ export default function Canvas({
   remoteCursors,
   CursorOverlayComponent,
 }: CanvasProps) {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
   const stageRef = useRef<Konva.Stage>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
@@ -124,8 +128,6 @@ export default function Canvas({
 
   const [drawingPreview, setDrawingPreview] = useState<DrawingPreview | null>(null);
   const isDrawing = useRef(false);
-  // Track newly created text object so it auto-enters edit mode
-  const [autoEditTextId, setAutoEditTextId] = useState<string | null>(null);
 
   // Marquee (rubber-band) selection state
   const [selectionRect, setSelectionRect] = useState<{
@@ -1063,13 +1065,10 @@ export default function Canvas({
       if (newObj) {
         addObject(newObj);
         selectObject(newObj.id);
-        if (newObj.object_type === 'text' || newObj.object_type === 'sticky_note') {
-          setAutoEditTextId(newObj.id);
-        }
         setActiveTool('select');
       }
     },
-    [drawingPreview, activeTool, buildObject, addObject, updateObject, selectObject, setSelectedIds, setActiveTool, setAutoEditTextId, arrowFromAnchor, arrowPreviewEnd, selectionRect, selectedIds, objects]
+    [drawingPreview, activeTool, buildObject, addObject, updateObject, selectObject, setSelectedIds, setActiveTool, arrowFromAnchor, arrowPreviewEnd, selectionRect, selectedIds, objects]
   );
 
   // Compute preview rect bounds for rendering
@@ -1971,7 +1970,6 @@ export default function Canvas({
             {...common}
             onTextChange={handleTextChange}
             onTextInput={handleTextInput}
-            autoEdit={autoEditTextId === obj.id}
           />
         );
       case 'rectangle':
@@ -1989,7 +1987,6 @@ export default function Canvas({
             {...common}
             onTextChange={handleTextChange}
             onTextInput={handleTextInput}
-            autoEdit={autoEditTextId === obj.id}
           />
         );
       case 'frame':
@@ -2101,6 +2098,34 @@ export default function Canvas({
     return connections;
   }, [selectedArrowEndpoints, objects]);
 
+  // Touch event wrappers: delegate to existing mouse handlers with preventDefault
+  // to suppress browser scroll/zoom and prevent synthetic mouse events (double-fire).
+  const handleTouchStart = useCallback(
+    (e: Konva.KonvaEventObject<TouchEvent>) => {
+      e.evt.preventDefault();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleMouseDown(e as any);
+    },
+    [handleMouseDown]
+  );
+
+  const handleTouchMove = useCallback(
+    (e: Konva.KonvaEventObject<TouchEvent>) => {
+      e.evt.preventDefault();
+      handleMouseMove();
+    },
+    [handleMouseMove]
+  );
+
+  const handleTouchEnd = useCallback(
+    (e: Konva.KonvaEventObject<TouchEvent>) => {
+      e.evt.preventDefault();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleMouseUp(e as any);
+    },
+    [handleMouseUp]
+  );
+
   const cursorStyle =
     activeTool === 'pan'
       ? (isPanning ? 'grabbing' : 'grab')
@@ -2110,8 +2135,8 @@ export default function Canvas({
 
   return (
     <div
-      className="relative h-screen w-screen overflow-hidden bg-gray-50"
-      style={{ cursor: cursorStyle }}
+      className="relative h-screen w-screen overflow-hidden bg-gray-50 dark:bg-gray-900"
+      style={{ cursor: cursorStyle, touchAction: 'none' }}
     >
       <Stage
         ref={stageRef}
@@ -2126,6 +2151,9 @@ export default function Canvas({
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         onDragMove={handleDragMove}
         onDragEnd={handleStageDragEnd}
       >
@@ -2136,12 +2164,13 @@ export default function Canvas({
             y={-5000}
             width={10000}
             height={10000}
-            fill="#fafafa"
+            fill={isDark ? '#111827' : '#fafafa'}
             listening={false}
           />
           <GridLayer
             width={dimensions.width}
             height={dimensions.height}
+            isDark={isDark}
           />
         </Layer>
 

@@ -52,7 +52,14 @@ export interface Board {
   name: string;
   created_by: string;
   created_at: string;
+  visibility: 'public' | 'private';
   creator_email?: string;
+}
+
+export interface BoardMemberWithEmail {
+  user_id: string;
+  role: 'owner' | 'editor' | 'viewer';
+  email: string;
 }
 
 export interface BoardMember {

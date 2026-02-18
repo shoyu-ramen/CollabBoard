@@ -62,12 +62,12 @@ src/
     (auth)/                   # Auth pages (login/signup)
     board/[id]/               # Main whiteboard page
     api/ai/                   # Claude API proxy endpoint
-    api/boards/               # Board CRUD endpoints
+    api/boards/               # Board CRUD + member management endpoints
   features/
     board/                    # Canvas, toolbar, shapes, hooks, types
-      components/             # Canvas, Toolbar, PropertiesPanel, shapes/
+      components/             # Canvas, Toolbar, PropertiesPanel, MemberManagementModal, shapes/
       hooks/                  # useBoardObjects, useBoardRealtime, usePresence
-      types.ts                # WhiteboardObject, ObjectProperties
+      types.ts                # WhiteboardObject, ObjectProperties, Board
     auth/                     # Auth components, hooks, services
     ai-agent/                 # AI service, tool schemas, tool executor, UI
       schemas/tools.ts        # Tool definitions for Claude function calling
@@ -76,11 +76,24 @@ src/
   components/ui/              # Shared UI components (shadcn/ui)
 ```
 
+### Board Visibility & Access Control
+
+Boards support **public** and **private** visibility:
+
+- **Public boards** are visible to all authenticated users on the dashboard and can be joined by anyone.
+- **Private boards** are only visible to the board owner and explicitly invited members. Other users cannot see or access them.
+
+Board owners can manage membership from within the board via the **Members** modal, which allows inviting users by email and removing existing members. Visibility is set at creation time in the dashboard's "New Board" dialog.
+
+Access control is enforced at multiple layers:
+- **Database (RLS):** Row-Level Security policies on `boards`, `board_members`, and `whiteboard_objects` restrict reads to public boards or boards where the user is the owner/member.
+- **API (defense-in-depth):** Server-side routes additionally filter private boards the user doesn't own or belong to, guarding against RLS misconfiguration.
+
 ### Data Model
 
 | Table | Key Columns |
 |---|---|
-| `boards` | id, name, created_by, created_at |
+| `boards` | id, name, created_by, created_at, visibility (`public` \| `private`) |
 | `board_members` | board_id, user_id, role (multi-tenancy via RLS) |
 | `whiteboard_objects` | id, board_id, object_type, properties (JSONB), updated_by, updated_at, version |
 
@@ -110,6 +123,20 @@ Optimized for 500+ objects at 60 FPS:
 - Viewport culling with configurable padding
 - `shape.cache()` for static objects
 - `listening={false}` on non-interactive elements
+
+### Performance Targets
+
+All targets are validated by automated tests (unit + E2E):
+
+| Metric | Target | Validated By |
+|---|---|---|
+| Frame rate | 60 FPS during pan/zoom/manipulation | `canvas-performance.spec.ts` (30 FPS CI threshold) |
+| Object sync latency | <100ms client-side processing | `sync-latency.spec.ts` |
+| Cursor sync latency | <50ms client-side processing | `sync-latency.spec.ts` |
+| Object capacity | 500+ objects without degradation | `canvas-performance.test.ts` + `canvas-performance.spec.ts` |
+| Concurrent users | 5+ without degradation | `concurrent-users.spec.ts` |
+| AI response latency | <2s for single-step commands | `ai-latency.spec.ts` |
+| AI command breadth | 6+ distinct command types | `tools-breadth.test.ts` |
 
 ## Observability
 
@@ -155,6 +182,51 @@ pnpm type-check       # Run TypeScript type checking
 pnpm test             # Run Vitest unit tests
 pnpm test:watch       # Run Vitest in watch mode
 pnpm test:e2e         # Run Playwright E2E tests
+```
+
+### Test Structure
+
+```
+tests/
+  unit/
+    board/
+      board-objects-store.test.ts     # Zustand store CRUD
+      canvas-performance.test.ts      # Viewport culling & store ops at 500+ objects
+      realtime-utils.test.ts          # Realtime sync utilities
+    ai-agent/
+      tools-schema.test.ts            # AI tool schema validation
+      tools-breadth.test.ts           # AI tool count & category coverage
+      tool-executor.test.ts           # Tool execution logic
+      tool-executor-integration.test.ts
+      ai-service.test.ts              # AI service unit tests
+    api/
+      ai-route.test.ts               # API route handler tests
+      rate-limiter.test.ts            # Rate limiting
+  e2e/
+    helpers/
+      board.helpers.ts               # Mock Supabase, canvas utilities
+      performance.helpers.ts          # FPS measurement, pan/zoom simulation
+    fixtures/
+      ai-responses.ts                # Deterministic AI response fixtures
+    performance/
+      canvas-performance.spec.ts     # FPS + object capacity E2E
+      sync-latency.spec.ts           # Object & cursor sync latency
+      ai-latency.spec.ts             # AI command response time
+      concurrent-users.spec.ts       # 5-context simultaneous usage
+      rapid-operations.spec.ts       # Rapid object creation
+```
+
+To run only the performance test suite:
+
+```bash
+pnpm test -- tests/unit/board/canvas-performance.test.ts tests/unit/ai-agent/tools-breadth.test.ts
+pnpm test:e2e tests/e2e/performance/
+```
+
+To run live AI latency tests (requires a valid `ANTHROPIC_API_KEY`):
+
+```bash
+LIVE_AI_TESTS=true pnpm test:e2e tests/e2e/performance/ai-latency.spec.ts
 ```
 
 ## Deployment
