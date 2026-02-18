@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { ChevronRight } from 'lucide-react';
 import { useAIAgent } from '../hooks/useAIAgent';
 import type { AIMessage, ToolCallResult } from '../types';
 
@@ -126,7 +127,7 @@ export function AIChatPanel({ boardId, isOpen, onClose }: AIChatPanelProps) {
 
   return (
     <div
-      className={`fixed right-0 top-0 z-50 flex h-full w-96 flex-col border-l border-slate-200 bg-slate-50 shadow-xl transition-transform duration-300 ease-in-out dark:border-gray-700 dark:bg-gray-950 ${
+      className={`fixed right-0 top-0 z-50 flex h-full w-full sm:w-96 flex-col border-l border-slate-200 bg-slate-50 shadow-xl transition-transform duration-300 ease-in-out dark:border-gray-700 dark:bg-gray-950 ${
         isOpen ? 'translate-x-0' : 'translate-x-full'
       }`}
     >
@@ -170,22 +171,9 @@ export function AIChatPanel({ boardId, isOpen, onClose }: AIChatPanelProps) {
           <button
             onClick={onClose}
             className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-            title="Close panel"
+            title="Collapse panel"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M18 6 6 18" />
-              <path d="m6 6 12 12" />
-            </svg>
+            <ChevronRight size={16} />
           </button>
         </div>
       </div>

@@ -12,8 +12,11 @@ import {
   measureOperationTime,
 } from '../helpers/performance.helpers';
 
+// Spec requires 60 FPS; CI headless runners have lower graphics perf
+const FPS_TARGET = process.env.CI ? 50 : 60;
+
 test.describe('Canvas performance — FPS & object capacity', () => {
-  test('FPS during pan with 500 objects >= 30', async ({ page }) => {
+  test(`FPS during pan with 500 objects >= ${FPS_TARGET}`, async ({ page }) => {
     const objects = generateObjects(500);
     await mockEmptyBoard(page, objects);
     await page.goto('/board/test-board-id');
@@ -32,11 +35,10 @@ test.describe('Canvas performance — FPS & object capacity', () => {
     const fps = await fpsPromise;
     console.log(`[perf] FPS during pan with 500 objects: ${fps.toFixed(1)}`);
 
-    // 30 FPS as CI-safe threshold; 60 is aspirational for headed mode
-    expect(fps).toBeGreaterThanOrEqual(30);
+    expect(fps).toBeGreaterThanOrEqual(FPS_TARGET);
   });
 
-  test('FPS during zoom with 500 objects >= 30', async ({ page }) => {
+  test(`FPS during zoom with 500 objects >= ${FPS_TARGET}`, async ({ page }) => {
     const objects = generateObjects(500);
     await mockEmptyBoard(page, objects);
     await page.goto('/board/test-board-id');
@@ -57,7 +59,7 @@ test.describe('Canvas performance — FPS & object capacity', () => {
     const fps = await fpsPromise;
     console.log(`[perf] FPS during zoom with 500 objects: ${fps.toFixed(1)}`);
 
-    expect(fps).toBeGreaterThanOrEqual(30);
+    expect(fps).toBeGreaterThanOrEqual(FPS_TARGET);
   });
 
   test('500 objects render on canvas (visible subset via culling)', async ({

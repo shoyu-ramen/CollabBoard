@@ -170,7 +170,9 @@ test.describe('Concurrent users — 5+ without degradation', () => {
     }
   });
 
-  test('FPS remains >= 30 with 5 active contexts', async ({ browser }) => {
+  // Spec requires 60 FPS; CI headless runners have lower graphics perf
+  const FPS_TARGET = process.env.CI ? 50 : 60;
+  test(`FPS remains >= ${FPS_TARGET} with 5 active contexts`, async ({ browser }) => {
     const objects = generateObjects(100);
     const users: { context: BrowserContext; page: Page }[] = [];
 
@@ -199,9 +201,7 @@ test.describe('Concurrent users — 5+ without degradation', () => {
     console.log(
       `[perf] FPS on context 1 with ${CONCURRENT_USERS} active contexts: ${fps.toFixed(1)}`
     );
-    // In headless CI, FPS may be lower due to resource sharing
-    // Use a relaxed threshold of 15 for concurrent contexts
-    expect(fps).toBeGreaterThanOrEqual(15);
+    expect(fps).toBeGreaterThanOrEqual(FPS_TARGET);
 
     for (const user of users) {
       await user.context.close();

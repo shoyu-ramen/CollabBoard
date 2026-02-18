@@ -11,6 +11,7 @@ import { PresenceIndicator } from '@/features/board/components/PresenceIndicator
 import { MemberManagementModal } from '@/features/board/components/MemberManagementModal';
 import { AIButton } from '@/features/ai-agent/components/AIButton';
 import { AIChatPanel } from '@/features/ai-agent/components/AIChatPanel';
+import { FloatingActionBar } from '@/features/board/components/FloatingActionBar';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { useBoardRealtime } from '@/features/board/hooks/useBoardRealtime';
 import { useBoardPersistence } from '@/features/board/hooks/useBoardPersistence';
@@ -217,6 +218,7 @@ export default function BoardPage({
         remoteCursors={remoteCursors}
         CursorOverlayComponent={CursorOverlayDynamic}
       />
+      <FloatingActionBar />
       <Link
         href="/dashboard"
         className="absolute top-4 left-4 z-50 flex h-10 w-10 items-center justify-center rounded-lg bg-white shadow-md border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors dark:bg-gray-900 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
@@ -253,6 +255,12 @@ export default function BoardPage({
         />
       )}
       <AIButton onClick={() => setAiPanelOpen(true)} isOpen={aiPanelOpen} />
+      {aiPanelOpen && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setAiPanelOpen(false)}
+        />
+      )}
       <AIChatPanel boardId={boardId} isOpen={aiPanelOpen} onClose={() => setAiPanelOpen(false)} />
       {/* Connection status banner */}
       {(connectionStatus === 'disconnected' || connectionStatus === 'reconnecting') && !loading && (

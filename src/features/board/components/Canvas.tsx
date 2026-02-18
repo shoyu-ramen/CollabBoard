@@ -205,17 +205,51 @@ export default function Canvas({
     }
   }, [setStageRef]);
 
-  // Resize handler
+  // Resize handler with debounce and orientation support
   useEffect(() => {
-    const updateSize = () => {
+    let debounceTimer: ReturnType<typeof setTimeout>;
+    const orientationTimers: ReturnType<typeof setTimeout>[] = [];
+
+    const applySize = () => {
       setDimensions({
         width: window.innerWidth,
         height: window.innerHeight,
       });
+      if (stageRef.current) {
+        stageRef.current.batchDraw();
+      }
     };
-    updateSize();
-    window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
+
+    const debouncedResize = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(applySize, 150);
+    };
+
+    const handleOrientationChange = () => {
+      // Immediate update plus delayed updates to catch final dimensions
+      applySize();
+      orientationTimers.push(setTimeout(applySize, 300));
+      orientationTimers.push(setTimeout(applySize, 500));
+    };
+
+    applySize();
+    window.addEventListener('resize', debouncedResize);
+    window.addEventListener('orientationchange', handleOrientationChange);
+
+    const viewport = window.visualViewport;
+    if (viewport) {
+      viewport.addEventListener('resize', debouncedResize);
+    }
+
+    return () => {
+      clearTimeout(debounceTimer);
+      orientationTimers.forEach(clearTimeout);
+      window.removeEventListener('resize', debouncedResize);
+      window.removeEventListener('orientationchange', handleOrientationChange);
+      if (viewport) {
+        viewport.removeEventListener('resize', debouncedResize);
+      }
+    };
   }, []);
 
   // Keyboard shortcuts
@@ -236,8 +270,9 @@ export default function Canvas({
 
       if ((e.metaKey || e.ctrlKey) && e.key === 'd') {
         e.preventDefault();
-        // Duplicate selected
+        // Duplicate selected and select the new objects
         const state = useBoardObjects.getState();
+        const newIds = new Set<string>();
         state.selectedIds.forEach((id) => {
           const obj = state.objects.get(id);
           if (obj) {
@@ -251,8 +286,12 @@ export default function Canvas({
               created_at: new Date().toISOString(),
             };
             addObject(newObj);
+            newIds.add(newObj.id);
           }
         });
+        if (newIds.size > 0) {
+          useBoardObjects.getState().setSelectedIds(newIds);
+        }
       }
 
       // Cmd/Ctrl+C — Copy
