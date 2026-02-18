@@ -1,11 +1,13 @@
 'use client';
 
-import { use, useEffect } from 'react';
+import { use, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import Toolbar from '@/features/board/components/Toolbar';
 import PropertiesPanel from '@/features/board/components/PropertiesPanel';
 import { PresenceIndicator } from '@/features/board/components/PresenceIndicator';
+import { AIButton } from '@/features/ai-agent/components/AIButton';
+import { AIChatPanel } from '@/features/ai-agent/components/AIChatPanel';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { useBoardRealtime } from '@/features/board/hooks/useBoardRealtime';
 import { useBoardPersistence } from '@/features/board/hooks/useBoardPersistence';
@@ -46,7 +48,7 @@ export default function BoardPage({
   // has joined (via the join API). This ensures RLS access is established
   // before the channels subscribe.
   const realtimeBoardId = loading ? null : boardId;
-  const { onlineUsers, remoteCursors, broadcastCursor } = useBoardRealtime({
+  const { onlineUsers, remoteCursors, broadcastCursor, connectionStatus } = useBoardRealtime({
     boardId: realtimeBoardId,
     userId,
     userName,
@@ -62,6 +64,9 @@ export default function BoardPage({
       untrackBoard();
     };
   }, [loading, boardId, userId, userName, trackBoard, untrackBoard]);
+
+  // AI panel state
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
 
   // Canvas state for cursor coordinate conversion
   const zoom = useCanvas((s) => s.zoom);
@@ -124,7 +129,19 @@ export default function BoardPage({
       <Toolbar />
       <PropertiesPanel />
       <PresenceIndicator users={onlineUsers} />
-      {/* AI agent disabled for MVP */}
+      <AIButton onClick={() => setAiPanelOpen(true)} isOpen={aiPanelOpen} />
+      <AIChatPanel boardId={boardId} isOpen={aiPanelOpen} onClose={() => setAiPanelOpen(false)} />
+      {/* Connection status banner */}
+      {(connectionStatus === 'disconnected' || connectionStatus === 'reconnecting') && !loading && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 shadow-md">
+          <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+          <span className="text-sm text-amber-700">
+            {connectionStatus === 'reconnecting'
+              ? 'Reconnecting...'
+              : 'Connection lost, reconnecting...'}
+          </span>
+        </div>
+      )}
     </main>
   );
 }

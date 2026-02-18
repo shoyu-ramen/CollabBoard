@@ -17,7 +17,6 @@ interface TransformWrapperProps {
     attrs: { x: number; y: number; width: number; height: number; rotation: number },
     scale: { scaleX: number; scaleY: number }
   ) => void;
-  /** Pass objects map so the effect re-runs when objects change (e.g. after resize) */
   objects?: Map<string, unknown>;
 }
 
@@ -26,13 +25,26 @@ export default function TransformWrapper({
   stageRef,
   onTransformEnd,
   onTransform,
-  objects,
 }: TransformWrapperProps) {
   const transformerRef = useRef<Konva.Transformer>(null);
+  const prevIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const transformer = transformerRef.current;
     if (!transformer || !stageRef) return;
+
+    // Only re-attach nodes when the actual selected IDs change, not when the
+    // Set reference changes (which happens on every objects-map mutation).
+    // Re-running transformer.nodes() resets the bounding box to axis-aligned,
+    // which loses group rotation (the rotate handle snaps back to the top).
+    const prev = prevIdsRef.current;
+    if (
+      selectedIds.size === prev.size &&
+      [...selectedIds].every((id) => prev.has(id))
+    ) {
+      return;
+    }
+    prevIdsRef.current = new Set(selectedIds);
 
     const nodes: Konva.Node[] = [];
     selectedIds.forEach((id) => {
@@ -44,7 +56,7 @@ export default function TransformWrapper({
 
     transformer.nodes(nodes);
     transformer.getLayer()?.batchDraw();
-  }, [selectedIds, stageRef, objects]);
+  }, [selectedIds, stageRef]);
 
   return (
     <Transformer

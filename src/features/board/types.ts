@@ -3,7 +3,9 @@ export type ObjectType =
   | 'rectangle'
   | 'circle'
   | 'frame'
-  | 'arrow';
+  | 'arrow'
+  | 'line'
+  | 'text';
 
 export interface WhiteboardObject {
   id: string;
@@ -82,4 +84,6 @@ export type ToolType =
   | 'circle'
   | 'frame'
   | 'arrow'
+  | 'line'
+  | 'text'
   | 'pan';

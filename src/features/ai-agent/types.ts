@@ -1,3 +1,5 @@
+import type { WhiteboardObject } from '@/features/board/types';
+
 export interface AIMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -71,6 +73,7 @@ export interface AIRequestBody {
   message: string;
   boardId: string;
   boardState?: BoardStateSummary[];
+  viewportCenter?: { x: number; y: number };
 }
 
 export interface BoardStateSummary {
@@ -87,5 +90,7 @@ export interface BoardStateSummary {
 export interface AIResponseBody {
   reply: string;
   toolCalls: ToolCallResult[];
+  createdObjects?: WhiteboardObject[];
   error?: string;
 }
+

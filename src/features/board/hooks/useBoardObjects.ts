@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import { v4 as uuidv4 } from 'uuid';
 import { createClient } from '@/lib/supabase/client';
 import { broadcastToLiveChannel } from './useBoardRealtime';
 import type { WhiteboardObject, ToolType } from '../types';
@@ -11,6 +12,7 @@ interface BoardObjectsState {
   activeTool: ToolType;
   boardId: string | null;
   userId: string | null;
+  clipboard: WhiteboardObject[];
 
   // Board context
   setBoardContext: (boardId: string, userId: string) => void;
@@ -18,6 +20,7 @@ interface BoardObjectsState {
   // Object CRUD (state-only, used by realtime sync)
   addObject: (obj: WhiteboardObject) => void;
   updateObject: (id: string, updates: Partial<WhiteboardObject>) => void;
+  batchUpdateObjects: (updates: Array<{id: string, updates: Partial<WhiteboardObject>}>) => void;
   deleteObject: (id: string) => void;
   getObject: (id: string) => WhiteboardObject | undefined;
   setObjects: (objs: WhiteboardObject[]) => void;
@@ -30,10 +33,15 @@ interface BoardObjectsState {
 
   // Selection
   selectObject: (id: string, multi?: boolean) => void;
+  setSelectedIds: (ids: Set<string>) => void;
   deselectAll: () => void;
 
   // Tool
   setActiveTool: (tool: ToolType) => void;
+
+  // Clipboard
+  copySelected: () => void;
+  pasteClipboard: () => void;
 
   // Bulk operations (state-only, used by realtime sync)
   deleteSelected: () => void;
@@ -45,6 +53,7 @@ export const useBoardObjects = create<BoardObjectsState>((set, get) => ({
   activeTool: 'select',
   boardId: null,
   userId: null,
+  clipboard: [],
 
   setBoardContext: (boardId, userId) => set({ boardId, userId }),
 
@@ -61,6 +70,18 @@ export const useBoardObjects = create<BoardObjectsState>((set, get) => ({
       if (!existing) return state;
       const next = new Map(state.objects);
       next.set(id, { ...existing, ...updates });
+      return { objects: next };
+    }),
+
+  batchUpdateObjects: (updates) =>
+    set((state) => {
+      const next = new Map(state.objects);
+      for (const { id, updates: u } of updates) {
+        const existing = next.get(id);
+        if (existing) {
+          next.set(id, { ...existing, ...u });
+        }
+      }
       return { objects: next };
     }),
 
@@ -205,9 +226,90 @@ export const useBoardObjects = create<BoardObjectsState>((set, get) => ({
       return { selectedIds: new Set([id]) };
     }),
 
+  setSelectedIds: (ids) => set({ selectedIds: ids }),
+
   deselectAll: () => set({ selectedIds: new Set() }),
 
   setActiveTool: (tool) => set({ activeTool: tool }),
+
+  copySelected: () => {
+    const { selectedIds, objects } = get();
+    const copied: WhiteboardObject[] = [];
+    selectedIds.forEach((id) => {
+      const obj = objects.get(id);
+      if (obj) copied.push({ ...obj });
+    });
+    set({ clipboard: copied });
+  },
+
+  pasteClipboard: () => {
+    const { clipboard, boardId, userId } = get();
+    if (clipboard.length === 0) return;
+    const now = new Date().toISOString();
+    const PASTE_OFFSET = 30;
+    const idMap = new Map<string, string>();
+
+    // First pass: generate new IDs
+    const newObjects = clipboard.map((obj) => {
+      const newId = uuidv4();
+      idMap.set(obj.id, newId);
+      return {
+        ...obj,
+        id: newId,
+        x: obj.x + PASTE_OFFSET,
+        y: obj.y + PASTE_OFFSET,
+        board_id: boardId || obj.board_id,
+        updated_by: userId || obj.updated_by,
+        updated_at: now,
+        created_at: now,
+        version: 1,
+      };
+    });
+
+    // Second pass: update arrow connections to point to new IDs
+    for (const obj of newObjects) {
+      if (obj.object_type === 'arrow' && obj.properties) {
+        if (
+          obj.properties.startObjectId &&
+          idMap.has(obj.properties.startObjectId)
+        ) {
+          obj.properties = {
+            ...obj.properties,
+            startObjectId: idMap.get(obj.properties.startObjectId),
+          };
+        } else if (obj.properties.startObjectId) {
+          obj.properties = {
+            ...obj.properties,
+            startObjectId: undefined,
+            startAnchorSide: undefined,
+          };
+        }
+        if (
+          obj.properties.endObjectId &&
+          idMap.has(obj.properties.endObjectId)
+        ) {
+          obj.properties = {
+            ...obj.properties,
+            endObjectId: idMap.get(obj.properties.endObjectId),
+          };
+        } else if (obj.properties.endObjectId) {
+          obj.properties = {
+            ...obj.properties,
+            endObjectId: undefined,
+            endAnchorSide: undefined,
+          };
+        }
+      }
+    }
+
+    // Add all and select them
+    const newIds = new Set<string>();
+    for (const obj of newObjects) {
+      get().addObjectSync(obj);
+      newIds.add(obj.id);
+    }
+    set({ selectedIds: newIds });
+  },
 
   deleteSelected: () =>
     set((state) => {

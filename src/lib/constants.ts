@@ -23,6 +23,8 @@ export const DEFAULT_STICKY_COLORS = [
   '#FBCFE8', // pink
   '#FED7AA', // orange
   '#E9D5FF', // purple
+  '#FECACA', // red
+  '#E0E7FF', // indigo
 ];
 
 // Shape defaults
@@ -35,13 +37,22 @@ export const DEFAULT_STROKE_WIDTH = 2;
 export const DEFAULT_FRAME_WIDTH = 400;
 export const DEFAULT_FRAME_HEIGHT = 300;
 
+// Text defaults
+export const DEFAULT_TEXT_FONT_SIZE = 20;
+export const DEFAULT_TEXT_COLOR = '#1a1a1a';
+export const DEFAULT_TEXT_FONT_FAMILY = 'sans-serif';
+
+// Line defaults
+export const DEFAULT_LINE_COLOR = '#000000';
+export const DEFAULT_LINE_WIDTH = 2;
+
 // Performance
 export const VIEWPORT_PADDING = 200; // pixels outside viewport to still render
 export const MAX_OBJECTS = 5000;
 
 // AI
 export const AI_RATE_LIMIT_PER_MINUTE = 10;
-export const AI_MODEL = 'claude-sonnet-4-5-20250929';
+export const AI_MODEL = 'claude-sonnet-4-6';
 
 // Real-time
 export const REALTIME_CHANNEL_PREFIX = 'board:';

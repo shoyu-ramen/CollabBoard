@@ -17,6 +17,13 @@ import {
   DEFAULT_SHAPE_HEIGHT,
   DEFAULT_SHAPE_COLOR,
   DEFAULT_STROKE_WIDTH,
+  DEFAULT_FRAME_WIDTH,
+  DEFAULT_FRAME_HEIGHT,
+  DEFAULT_TEXT_FONT_SIZE,
+  DEFAULT_TEXT_COLOR,
+  DEFAULT_TEXT_FONT_FAMILY,
+  DEFAULT_LINE_COLOR,
+  DEFAULT_LINE_WIDTH,
   OBJECT_SYNC_THROTTLE_MS,
 } from '@/lib/constants';
 
@@ -24,6 +31,9 @@ import StickyNote from './shapes/StickyNote';
 import Rectangle from './shapes/Rectangle';
 import CircleShape from './shapes/Circle';
 import ArrowShape from './shapes/Arrow';
+import LineShape from './shapes/LineShape';
+import TextBox from './shapes/TextBox';
+import Frame from './shapes/Frame';
 import TransformWrapper from './TransformWrapper';
 import {
   findObjectAtPoint,
@@ -99,6 +109,7 @@ export default function Canvas({
   const addObject = useBoardObjects((s) => s.addObjectSync);
   const updateObject = useBoardObjects((s) => s.updateObjectSync);
   const selectObject = useBoardObjects((s) => s.selectObject);
+  const setSelectedIds = useBoardObjects((s) => s.setSelectedIds);
   const deselectAll = useBoardObjects((s) => s.deselectAll);
   const deleteSelected = useBoardObjects((s) => s.deleteSelectedSync);
   const setActiveTool = useBoardObjects((s) => s.setActiveTool);
@@ -111,6 +122,29 @@ export default function Canvas({
 
   const [drawingPreview, setDrawingPreview] = useState<DrawingPreview | null>(null);
   const isDrawing = useRef(false);
+  // Track newly created text object so it auto-enters edit mode
+  const [autoEditTextId, setAutoEditTextId] = useState<string | null>(null);
+
+  // Marquee (rubber-band) selection state
+  const [selectionRect, setSelectionRect] = useState<{
+    startX: number; startY: number; currentX: number; currentY: number;
+  } | null>(null);
+  const isMarqueeSelecting = useRef(false);
+
+  // Group drag state: snapshot of all selected objects' original positions
+  const groupDragOriginals = useRef<Map<string, { x: number; y: number }> | null>(null);
+
+  // Frame drag state: objects contained in a dragged frame and their original positions
+  const frameDragChildren = useRef<Map<string, { x: number; y: number }> | null>(null);
+  const frameDragOrigin = useRef<{ x: number; y: number } | null>(null);
+
+  // Pan mode: track whether currently panning for cursor style
+  const [isPanning, setIsPanning] = useState(false);
+  const isPanningRef = useRef(false);
+  // Track whether pan was triggered by Alt hold (temporary pan)
+  const altPanActive = useRef(false);
+  // Track whether primary mouse button is held
+  const mouseHeldRef = useRef(false);
 
   // Anchor hover state (select mode: show anchors on hovered shape)
   const [hoveredObjectId, setHoveredObjectId] = useState<string | null>(null);
@@ -140,12 +174,31 @@ export default function Canvas({
   const arrowStartSideRef = useRef<string | null>(null);
   const arrowEndSideRef = useRef<string | null>(null);
   const endpointSnapObjRef = useRef<string | null>(null);
+  // Live visual overrides during transform. We must NOT update the Zustand store
+  // during transform — it changes the `objects` prop on TransformWrapper, which
+  // re-runs transformer.nodes() and resets Konva's internal rotation/scale state.
+  // Instead we compute positions from live Konva nodes and store in React state.
+  const [transformConnections, setTransformConnections] = useState<
+    Array<{ x: number; y: number; side: string }> | null
+  >(null);
+  const [transformArrowEndpoints, setTransformArrowEndpoints] = useState<
+    Array<{
+      arrowId: string;
+      startX: number; startY: number;
+      endX: number; endY: number;
+      startObjectId?: string; endObjectId?: string;
+      startAnchorSide?: string; endAnchorSide?: string;
+    }> | null
+  >(null);
   const endpointSnapSideRef = useRef<string | null>(null);
 
   // Set stage ref on mount
   useEffect(() => {
     if (stageRef.current) {
       setStageRef(stageRef.current);
+      if (process.env.NODE_ENV !== 'production') {
+        (window as unknown as Record<string, unknown>).__KONVA_STAGE__ = stageRef.current;
+      }
     }
   }, [setStageRef]);
 
@@ -198,15 +251,66 @@ export default function Canvas({
         });
       }
 
+      // Cmd/Ctrl+C — Copy
+      if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
+        e.preventDefault();
+        useBoardObjects.getState().copySelected();
+      }
+
+      // Cmd/Ctrl+V — Paste
+      if ((e.metaKey || e.ctrlKey) && e.key === 'v') {
+        e.preventDefault();
+        useBoardObjects.getState().pasteClipboard();
+      }
+
+      // Cmd/Ctrl+X — Cut (copy + delete)
+      if ((e.metaKey || e.ctrlKey) && e.key === 'x') {
+        e.preventDefault();
+        useBoardObjects.getState().copySelected();
+        deleteSelected();
+      }
+
       if (e.key === 'Escape') {
         deselectAll();
+        setActiveTool('select');
+      }
+
+      // Alt pressed while mouse is held: re-enter pan mode
+      if (e.key === 'Alt' && mouseHeldRef.current && !altPanActive.current) {
+        altPanActive.current = true;
+        isPanningRef.current = true;
+        setIsPanning(true);
+        setActiveTool('pan');
+        deselectAll();
+        const stage = stageRef.current;
+        if (stage) {
+          stage.startDrag();
+        }
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Alt' && altPanActive.current) {
+        altPanActive.current = false;
+        // Stop any in-progress stage drag
+        const stage = stageRef.current;
+        if (isPanningRef.current && stage) {
+          stage.stopDrag();
+          setPanOffset({ x: stage.x(), y: stage.y() });
+        }
+        isPanningRef.current = false;
+        setIsPanning(false);
         setActiveTool('select');
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [deleteSelected, deselectAll, addObject, setActiveTool]);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [deleteSelected, deselectAll, addObject, setActiveTool, setPanOffset]);
 
   // Zoom via wheel
   const handleWheel = useCallback(
@@ -286,6 +390,32 @@ export default function Canvas({
               strokeWidth: DEFAULT_STROKE_WIDTH,
             },
           };
+        case 'frame':
+          return {
+            ...base,
+            object_type: 'frame',
+            width: width || DEFAULT_FRAME_WIDTH,
+            height: height || DEFAULT_FRAME_HEIGHT,
+            properties: {
+              title: 'Frame',
+              stroke: '#94A3B8',
+              strokeWidth: 2,
+            },
+          };
+        case 'text':
+          return {
+            ...base,
+            object_type: 'text',
+            width: 0,
+            height: 0,
+            properties: {
+              text: '',
+              fontSize: DEFAULT_TEXT_FONT_SIZE,
+              fontFamily: DEFAULT_TEXT_FONT_FAMILY,
+              color: DEFAULT_TEXT_COLOR,
+              textAlign: 'left',
+            },
+          };
         default:
           return null;
       }
@@ -296,7 +426,25 @@ export default function Canvas({
   // Mouse down: start drawing preview for creation tools, or anchor-snap arrow, or deselect
   const handleMouseDown = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
+      mouseHeldRef.current = true;
       const clickedOnEmpty = e.target === e.target.getStage();
+
+      // Alt/Opt+click: temporarily switch to pan mode
+      if (e.evt.altKey && activeTool !== 'pan') {
+        altPanActive.current = true;
+        setActiveTool('pan');
+        deselectAll();
+        isPanningRef.current = true;
+        setIsPanning(true);
+        return;
+      }
+
+      // Pan mode: let Konva handle stage drag, do nothing else
+      if (activeTool === 'pan') {
+        isPanningRef.current = true;
+        setIsPanning(true);
+        return;
+      }
 
       if (activeTool === 'select') {
         // Check if clicking near any anchor — start arrow from anchor
@@ -332,6 +480,20 @@ export default function Canvas({
               arrowEndSideRef.current = null;
               return;
             }
+
+            // Start marquee selection on empty canvas
+            if (clickedOnEmpty) {
+              if (!e.evt.shiftKey) deselectAll();
+              stage.draggable(false);
+              isMarqueeSelecting.current = true;
+              setSelectionRect({
+                startX: pos.x,
+                startY: pos.y,
+                currentX: pos.x,
+                currentY: pos.y,
+              });
+              return;
+            }
           }
         }
         if (clickedOnEmpty) deselectAll();
@@ -339,6 +501,61 @@ export default function Canvas({
       }
 
       if (!isCreationTool) return;
+
+      // Text tool: click to place, immediately enter edit mode
+      if (activeTool === 'text') {
+        const stage = stageRef.current;
+        if (!stage) return;
+        const pointer = stage.getPointerPosition();
+        if (!pointer) return;
+        const pos = screenToCanvas(pointer.x, pointer.y, panOffset, zoom);
+
+        const now = new Date().toISOString();
+        const textObj: WhiteboardObject = {
+          id: uuidv4(),
+          board_id: '',
+          object_type: 'text',
+          x: pos.x,
+          y: pos.y,
+          width: 0,
+          height: 0,
+          rotation: 0,
+          properties: {
+            text: '',
+            fontSize: DEFAULT_TEXT_FONT_SIZE,
+            fontFamily: DEFAULT_TEXT_FONT_FAMILY,
+            color: DEFAULT_TEXT_COLOR,
+            textAlign: 'left',
+          },
+          updated_by: '',
+          updated_at: now,
+          created_at: now,
+          version: 1,
+        };
+        addObject(textObj);
+        selectObject(textObj.id);
+        setAutoEditTextId(textObj.id);
+        setActiveTool('select');
+        return;
+      }
+
+      // Line tool: drag to draw (like arrow but no pointer head)
+      if (activeTool === 'line') {
+        const stage = stageRef.current;
+        if (!stage) return;
+        const pointer = stage.getPointerPosition();
+        if (!pointer) return;
+        const pos = screenToCanvas(pointer.x, pointer.y, panOffset, zoom);
+
+        isDrawing.current = true;
+        setDrawingPreview({
+          startX: pos.x,
+          startY: pos.y,
+          currentX: pos.x,
+          currentY: pos.y,
+        });
+        return;
+      }
 
       // Arrow tool: start on empty canvas or on anchor
       if (activeTool === 'arrow') {
@@ -385,17 +602,25 @@ export default function Canvas({
         currentY: pos.y,
       });
     },
-    [activeTool, isCreationTool, deselectAll, panOffset, zoom, objects, selectedIds]
+    [activeTool, isCreationTool, deselectAll, panOffset, zoom, objects, selectedIds, setActiveTool, addObject, selectObject]
   );
 
   // Mouse move: update drawing preview, hover detection, or anchor-arrow preview
   const handleMouseMove = useCallback(
-    (e: Konva.KonvaEventObject<MouseEvent>) => {
+    () => {
       const stage = stageRef.current;
       if (!stage) return;
       const pointer = stage.getPointerPosition();
       if (!pointer) return;
       const pos = screenToCanvas(pointer.x, pointer.y, panOffset, zoom);
+
+      // Marquee selection drag
+      if (isMarqueeSelecting.current) {
+        setSelectionRect((prev) =>
+          prev ? { ...prev, currentX: pos.x, currentY: pos.y } : null
+        );
+        return;
+      }
 
       // Arrow endpoint drag (repositioning start or end of selected arrow)
       if (draggingEndpoint.current) {
@@ -510,6 +735,14 @@ export default function Canvas({
         return;
       }
 
+      // Line tool drawing: just update preview endpoint
+      if (activeTool === 'line' && isDrawing.current && drawingPreview) {
+        setDrawingPreview((prev) =>
+          prev ? { ...prev, currentX: pos.x, currentY: pos.y } : null
+        );
+        return;
+      }
+
       // Arrow tool drawing: snap endpoint to anchor
       if (activeTool === 'arrow' && isDrawing.current && drawingPreview) {
         const excludeTypes = new Set(['arrow']);
@@ -561,7 +794,77 @@ export default function Canvas({
 
   // Mouse up: finalize shape creation or arrow
   const handleMouseUp = useCallback(
-    () => {
+    (e?: Konva.KonvaEventObject<MouseEvent>) => {
+      mouseHeldRef.current = false;
+      // Pan mode: stop panning, revert to select if Alt-triggered
+      // Use ref (not state) to avoid stale closure between mousedown/mouseup
+      if (isPanningRef.current) {
+        isPanningRef.current = false;
+        setIsPanning(false);
+        if (altPanActive.current) {
+          altPanActive.current = false;
+          setActiveTool('select');
+        }
+      }
+
+      // Marquee selection: finalize
+      if (isMarqueeSelecting.current && selectionRect) {
+        isMarqueeSelecting.current = false;
+        const stage = stageRef.current;
+        if (stage) {
+          stage.draggable(activeTool === 'select' || activeTool === 'pan');
+        }
+
+        const x1 = Math.min(selectionRect.startX, selectionRect.currentX);
+        const y1 = Math.min(selectionRect.startY, selectionRect.currentY);
+        const x2 = Math.max(selectionRect.startX, selectionRect.currentX);
+        const y2 = Math.max(selectionRect.startY, selectionRect.currentY);
+
+        // Only apply if the drag was meaningful
+        const w = x2 - x1;
+        const h = y2 - y1;
+        if (w > 5 || h > 5) {
+          const shiftKey = e?.evt?.shiftKey ?? false;
+          const newSelected = new Set<string>(
+            shiftKey ? selectedIds : []
+          );
+
+          objects.forEach((obj) => {
+            if (obj.object_type === 'arrow' || obj.object_type === 'line') {
+              const points = (obj.properties.points as number[]) || [
+                0, 0, obj.width, obj.height,
+              ];
+              const sx = obj.x + points[0];
+              const sy = obj.y + points[1];
+              const ex = obj.x + points[2];
+              const ey = obj.y + points[3];
+              if (
+                (sx >= x1 && sx <= x2 && sy >= y1 && sy <= y2) ||
+                (ex >= x1 && ex <= x2 && ey >= y1 && ey <= y2)
+              ) {
+                newSelected.add(obj.id);
+              }
+            } else {
+              const objRight = obj.x + obj.width;
+              const objBottom = obj.y + obj.height;
+              if (
+                obj.x < x2 &&
+                objRight > x1 &&
+                obj.y < y2 &&
+                objBottom > y1
+              ) {
+                newSelected.add(obj.id);
+              }
+            }
+          });
+
+          setSelectedIds(newSelected);
+        }
+
+        setSelectionRect(null);
+        return;
+      }
+
       // Arrow endpoint drag: finalize
       if (draggingEndpoint.current) {
         const { arrowId, endpoint } = draggingEndpoint.current;
@@ -569,7 +872,7 @@ export default function Canvas({
         setSnapAnchor(null);
         setArrowTargetObjId(null);
         if (stageRef.current) {
-          stageRef.current.draggable(activeTool === 'select');
+          stageRef.current.draggable(activeTool === 'select' || activeTool === 'pan');
         }
         const arrow = useBoardObjects.getState().objects.get(arrowId);
         if (arrow) {
@@ -602,7 +905,7 @@ export default function Canvas({
         isDrawingArrowFromAnchor.current = false;
         // Restore stage dragging
         if (stageRef.current) {
-          stageRef.current.draggable(activeTool === 'select');
+          stageRef.current.draggable(activeTool === 'select' || activeTool === 'pan');
         }
         // Restore any disabled node dragging
         if (dragDisabledNode.current) {
@@ -669,7 +972,28 @@ export default function Canvas({
 
       let newObj: WhiteboardObject | null;
 
-      if (activeTool === 'arrow' && useDragged) {
+      if (activeTool === 'line' && useDragged) {
+        const now = new Date().toISOString();
+        newObj = {
+          id: uuidv4(),
+          board_id: '',
+          x: startX,
+          y: startY,
+          width: currentX - startX,
+          height: currentY - startY,
+          rotation: 0,
+          object_type: 'line',
+          properties: {
+            stroke: DEFAULT_LINE_COLOR,
+            strokeWidth: DEFAULT_LINE_WIDTH,
+            points: [0, 0, currentX - startX, currentY - startY],
+          },
+          updated_by: '',
+          updated_at: now,
+          created_at: now,
+          version: 1,
+        };
+      } else if (activeTool === 'arrow' && useDragged) {
         // Arrows use start point as origin with relative endpoint
         const now = new Date().toISOString();
         newObj = {
@@ -716,7 +1040,7 @@ export default function Canvas({
         setActiveTool('select');
       }
     },
-    [drawingPreview, activeTool, buildObject, addObject, updateObject, selectObject, setActiveTool, arrowFromAnchor, arrowPreviewEnd, zoom]
+    [drawingPreview, activeTool, buildObject, addObject, updateObject, selectObject, setSelectedIds, setActiveTool, arrowFromAnchor, arrowPreviewEnd, selectionRect, selectedIds, objects]
   );
 
   // Compute preview rect bounds for rendering
@@ -739,9 +1063,16 @@ export default function Canvas({
     (id: string, x: number, y: number) => {
       const state = useBoardObjects.getState();
       const obj = state.objects.get(id);
+      const wasGroupDrag = groupDragOriginals.current !== null;
+      const frameChildren = frameDragChildren.current;
 
-      // If an arrow body is dragged directly, clear its connections
-      if (obj?.object_type === 'arrow') {
+      // Reset group drag and frame drag refs
+      groupDragOriginals.current = null;
+      frameDragChildren.current = null;
+      frameDragOrigin.current = null;
+
+      // If an arrow/line body is dragged directly, clear its connections
+      if (obj?.object_type === 'arrow' || obj?.object_type === 'line') {
         updateObject(id, {
           x,
           y,
@@ -765,24 +1096,106 @@ export default function Canvas({
         version: (obj?.version || 0) + 1,
       });
 
-      // Persist connected arrow updates
+      // Persist connected arrow updates for the dragged object
       if (obj) {
-        const updatedState = useBoardObjects.getState();
-        const connectedArrows = getConnectedArrows(updatedState.objects, id);
+        const updatedObj = { ...obj, x, y };
+        const tempObjects = new Map(state.objects);
+        tempObjects.set(id, updatedObj);
+
+        const connectedArrows = getConnectedArrows(state.objects, id);
         for (const arrow of connectedArrows) {
-          const currentArrow = updatedState.objects.get(arrow.id);
-          if (currentArrow) {
+          const result = computeArrowEndpoints(arrow, tempObjects);
+          if (result) {
             updateObject(arrow.id, {
-              x: currentArrow.x,
-              y: currentArrow.y,
-              width: currentArrow.width,
-              height: currentArrow.height,
-              properties: currentArrow.properties,
+              x: result.x,
+              y: result.y,
+              width: result.width,
+              height: result.height,
+              properties: { ...arrow.properties, points: result.points },
               updated_at: new Date().toISOString(),
-              version: (currentArrow.version || 0) + 1,
+              version: (arrow.version || 0) + 1,
             });
           }
         }
+      }
+
+      // Persist all other group-dragged objects
+      // Store positions were already updated during drag; now persist to DB
+      if (wasGroupDrag) {
+        const freshState = useBoardObjects.getState();
+        freshState.selectedIds.forEach((otherId) => {
+          if (otherId === id) return;
+          const otherObj = freshState.objects.get(otherId);
+          if (!otherObj) return;
+
+          // Store already has the correct position from drag updates;
+          // just persist it (updateObjectSync will broadcast + write to DB)
+          updateObject(otherId, {
+            x: otherObj.x,
+            y: otherObj.y,
+            updated_at: new Date().toISOString(),
+            version: (otherObj.version || 0) + 1,
+          });
+
+          // Persist connected arrow updates for group-dragged objects
+          if (otherObj.object_type !== 'arrow') {
+            const latestState = useBoardObjects.getState();
+            const connectedArrows = getConnectedArrows(latestState.objects, otherId);
+            for (const arrow of connectedArrows) {
+              const currentArrow = latestState.objects.get(arrow.id);
+              if (currentArrow) {
+                updateObject(arrow.id, {
+                  x: currentArrow.x,
+                  y: currentArrow.y,
+                  width: currentArrow.width,
+                  height: currentArrow.height,
+                  properties: currentArrow.properties,
+                  updated_at: new Date().toISOString(),
+                  version: (currentArrow.version || 0) + 1,
+                });
+              }
+            }
+          }
+        });
+      }
+
+      // Persist frame drag children positions
+      if (frameChildren && frameChildren.size > 0) {
+        const processedArrows = new Set<string>();
+        frameChildren.forEach((_origPos, childId) => {
+          const childObj = useBoardObjects.getState().objects.get(childId);
+          if (!childObj) return;
+
+          updateObject(childId, {
+            x: childObj.x,
+            y: childObj.y,
+            updated_at: new Date().toISOString(),
+            version: (childObj.version || 0) + 1,
+          });
+
+          // Persist connected arrow updates for frame children
+          if (childObj.object_type !== 'arrow') {
+            const latestState = useBoardObjects.getState();
+            const connectedArrows = getConnectedArrows(latestState.objects, childId);
+            for (const arrow of connectedArrows) {
+              if (processedArrows.has(arrow.id)) continue;
+              if (frameChildren.has(arrow.id)) continue;
+              processedArrows.add(arrow.id);
+              const currentArrow = latestState.objects.get(arrow.id);
+              if (currentArrow) {
+                updateObject(arrow.id, {
+                  x: currentArrow.x,
+                  y: currentArrow.y,
+                  width: currentArrow.width,
+                  height: currentArrow.height,
+                  properties: currentArrow.properties,
+                  updated_at: new Date().toISOString(),
+                  version: (currentArrow.version || 0) + 1,
+                });
+              }
+            }
+          }
+        });
       }
     },
     [updateObject]
@@ -813,8 +1226,206 @@ export default function Canvas({
         y -= obj.height / 2;
       }
 
+      // Group drag: move all other selected objects by the same total offset
+      const isGroupDrag = state.selectedIds.has(id) && state.selectedIds.size > 1;
+      if (isGroupDrag) {
+        // Snapshot original positions on first frame
+        if (!groupDragOriginals.current) {
+          groupDragOriginals.current = new Map();
+          state.selectedIds.forEach((sid) => {
+            const sobj = state.objects.get(sid);
+            if (sobj) {
+              groupDragOriginals.current!.set(sid, { x: sobj.x, y: sobj.y });
+            }
+          });
+        }
+
+        // Total offset = current drag position - dragged object's original position
+        const origDragged = groupDragOriginals.current.get(id);
+        if (origDragged) {
+          const totalDx = x - origDragged.x;
+          const totalDy = y - origDragged.y;
+          const stage = stageRef.current;
+
+          // Move each other selected object to its original pos + total offset
+          groupDragOriginals.current.forEach((origPos, otherId) => {
+            if (otherId === id) return;
+            const otherObj = state.objects.get(otherId);
+            if (!otherObj) return;
+
+            const newX = origPos.x + totalDx;
+            const newY = origPos.y + totalDy;
+
+            if (stage) {
+              const node = stage.findOne('#' + otherId);
+              if (node) {
+                if (otherObj.object_type === 'circle') {
+                  node.x(newX + otherObj.width / 2);
+                  node.y(newY + otherObj.height / 2);
+                } else {
+                  node.x(newX);
+                  node.y(newY);
+                }
+              }
+            }
+
+            state.updateObject(otherId, { x: newX, y: newY });
+          });
+
+          // Update connected arrows with all positions consolidated
+          if (stage) {
+            const consolidated = new Map(useBoardObjects.getState().objects);
+            const primaryObj = consolidated.get(id);
+            if (primaryObj) {
+              consolidated.set(id, { ...primaryObj, x, y });
+            }
+
+            const processedArrows = new Set<string>();
+            state.selectedIds.forEach((movedId) => {
+              const movedObj = consolidated.get(movedId);
+              if (!movedObj || movedObj.object_type === 'arrow') return;
+
+              const connectedArrows = getConnectedArrows(consolidated, movedId);
+              for (const arrow of connectedArrows) {
+                if (processedArrows.has(arrow.id)) continue;
+                processedArrows.add(arrow.id);
+
+                const result = computeArrowEndpoints(arrow, consolidated);
+                if (result) {
+                  useBoardObjects.getState().updateObject(arrow.id, {
+                    x: result.x,
+                    y: result.y,
+                    width: result.width,
+                    height: result.height,
+                    properties: { ...arrow.properties, points: result.points },
+                  });
+                  const arrowNode = stage.findOne('#' + arrow.id);
+                  if (arrowNode) {
+                    arrowNode.setAttrs({
+                      x: result.x,
+                      y: result.y,
+                      points: result.points,
+                    });
+                  }
+                }
+              }
+            });
+
+            stage.batchDraw();
+          }
+        }
+      }
+
+      // Frame drag: move contained objects along with the frame
+      if (obj.object_type === 'frame' && !isGroupDrag) {
+        const stage = stageRef.current;
+
+        // First drag frame: detect children and snapshot positions
+        if (!frameDragChildren.current) {
+          frameDragOrigin.current = { x: obj.x, y: obj.y };
+          frameDragChildren.current = new Map();
+          state.objects.forEach((child) => {
+            if (child.id === id) return;
+            // Check if fully inside the frame
+            if (child.object_type === 'arrow') {
+              const points = (child.properties.points as number[]) || [0, 0, child.width, child.height];
+              const sx = child.x + points[0], sy = child.y + points[1];
+              const ex = child.x + points[2], ey = child.y + points[3];
+              if (
+                sx >= obj.x && sy >= obj.y &&
+                sx <= obj.x + obj.width && sy <= obj.y + obj.height &&
+                ex >= obj.x && ey >= obj.y &&
+                ex <= obj.x + obj.width && ey <= obj.y + obj.height
+              ) {
+                frameDragChildren.current!.set(child.id, { x: child.x, y: child.y });
+              }
+            } else {
+              if (
+                child.x >= obj.x &&
+                child.y >= obj.y &&
+                child.x + child.width <= obj.x + obj.width &&
+                child.y + child.height <= obj.y + obj.height
+              ) {
+                frameDragChildren.current!.set(child.id, { x: child.x, y: child.y });
+              }
+            }
+          });
+        }
+
+        // Move children by delta from frame's original position
+        if (frameDragOrigin.current && frameDragChildren.current.size > 0) {
+          const dx = x - frameDragOrigin.current.x;
+          const dy = y - frameDragOrigin.current.y;
+
+          frameDragChildren.current.forEach((origPos, childId) => {
+            const childObj = state.objects.get(childId);
+            if (!childObj) return;
+
+            const newX = origPos.x + dx;
+            const newY = origPos.y + dy;
+
+            state.updateObject(childId, { x: newX, y: newY });
+
+            if (stage) {
+              const node = stage.findOne('#' + childId);
+              if (node) {
+                if (childObj.object_type === 'circle') {
+                  node.x(newX + childObj.width / 2);
+                  node.y(newY + childObj.height / 2);
+                } else {
+                  node.x(newX);
+                  node.y(newY);
+                }
+              }
+            }
+          });
+
+          // Update connected arrows for non-arrow children
+          if (stage) {
+            const consolidated = new Map(useBoardObjects.getState().objects);
+            const frameObj = consolidated.get(id);
+            if (frameObj) consolidated.set(id, { ...frameObj, x, y });
+
+            const processedArrows = new Set<string>();
+            frameDragChildren.current.forEach((_origPos, childId) => {
+              const childObj = consolidated.get(childId);
+              if (!childObj || childObj.object_type === 'arrow') return;
+
+              const connectedArrows = getConnectedArrows(consolidated, childId);
+              for (const arrow of connectedArrows) {
+                if (processedArrows.has(arrow.id)) continue;
+                if (frameDragChildren.current!.has(arrow.id)) continue;
+                processedArrows.add(arrow.id);
+
+                const result = computeArrowEndpoints(arrow, consolidated);
+                if (result) {
+                  useBoardObjects.getState().updateObject(arrow.id, {
+                    x: result.x,
+                    y: result.y,
+                    width: result.width,
+                    height: result.height,
+                    properties: { ...arrow.properties, points: result.points },
+                  });
+                  const arrowNode = stage.findOne('#' + arrow.id);
+                  if (arrowNode) {
+                    arrowNode.setAttrs({
+                      x: result.x,
+                      y: result.y,
+                      points: result.points,
+                    });
+                  }
+                }
+              }
+            });
+
+            stage.batchDraw();
+          }
+        }
+      }
+
       // Update connected arrows locally every frame for smooth visuals
-      if (obj.object_type !== 'arrow') {
+      // (skip during group drag and frame drag — arrows are already handled above)
+      if (!isGroupDrag && obj.object_type !== 'arrow' && obj.object_type !== 'line' && obj.object_type !== 'frame') {
         const tempObj = { ...obj, x, y };
         const tempObjects = new Map(state.objects);
         tempObjects.set(id, tempObj);
@@ -837,22 +1448,58 @@ export default function Canvas({
       // Throttle broadcasts
       const now = Date.now();
       if (now - lastMoveRef.current < OBJECT_SYNC_THROTTLE_MS) return;
+      // eslint-disable-next-line react-hooks/immutability -- mutating ref.current is the standard React pattern
       lastMoveRef.current = now;
 
-      broadcastToLiveChannel('object_move', {
-        id,
-        updates: { x, y },
-        senderId: state.userId,
-      });
+      // Batch all updates into a single broadcast so the remote applies
+      // them in one Zustand set() — prevents tearing during group drag
+      const batchUpdates: Array<{id: string; updates: Partial<WhiteboardObject>}> = [];
 
-      // Also broadcast connected arrow positions
-      if (obj.object_type !== 'arrow') {
-        const updatedState = useBoardObjects.getState();
-        const connectedArrows = getConnectedArrows(updatedState.objects, id);
+      batchUpdates.push({ id, updates: { x, y } });
+
+      // Include all other group-dragged objects
+      if (isGroupDrag) {
+        const broadcastState = useBoardObjects.getState();
+        state.selectedIds.forEach((otherId) => {
+          if (otherId === id) return;
+          const otherObj = broadcastState.objects.get(otherId);
+          if (!otherObj) return;
+          batchUpdates.push({ id: otherId, updates: { x: otherObj.x, y: otherObj.y } });
+        });
+      }
+
+      // Include connected arrow positions
+      const broadcastArrowState = useBoardObjects.getState();
+      if (isGroupDrag) {
+        const processedArrows = new Set<string>();
+        state.selectedIds.forEach((movedId) => {
+          const movedObj = broadcastArrowState.objects.get(movedId);
+          if (!movedObj || movedObj.object_type === 'arrow') return;
+          const connectedArrows = getConnectedArrows(broadcastArrowState.objects, movedId);
+          for (const arrow of connectedArrows) {
+            if (processedArrows.has(arrow.id)) continue;
+            processedArrows.add(arrow.id);
+            const currentArrow = broadcastArrowState.objects.get(arrow.id);
+            if (currentArrow) {
+              batchUpdates.push({
+                id: arrow.id,
+                updates: {
+                  x: currentArrow.x,
+                  y: currentArrow.y,
+                  width: currentArrow.width,
+                  height: currentArrow.height,
+                  properties: currentArrow.properties,
+                },
+              });
+            }
+          }
+        });
+      } else if (obj.object_type !== 'arrow' && obj.object_type !== 'line') {
+        const connectedArrows = getConnectedArrows(broadcastArrowState.objects, id);
         for (const arrow of connectedArrows) {
-          const currentArrow = updatedState.objects.get(arrow.id);
+          const currentArrow = broadcastArrowState.objects.get(arrow.id);
           if (currentArrow) {
-            broadcastToLiveChannel('object_move', {
+            batchUpdates.push({
               id: arrow.id,
               updates: {
                 x: currentArrow.x,
@@ -861,14 +1508,89 @@ export default function Canvas({
                 height: currentArrow.height,
                 properties: currentArrow.properties,
               },
-              senderId: state.userId,
             });
           }
         }
       }
+
+      // Include frame drag children and their connected arrows
+      if (frameDragChildren.current && frameDragChildren.current.size > 0) {
+        const fcState = useBoardObjects.getState();
+        const processedFcArrows = new Set<string>();
+        frameDragChildren.current.forEach((_origPos, childId) => {
+          const childObj = fcState.objects.get(childId);
+          if (!childObj) return;
+          batchUpdates.push({ id: childId, updates: { x: childObj.x, y: childObj.y } });
+
+          if (childObj.object_type !== 'arrow') {
+            const connArrows = getConnectedArrows(fcState.objects, childId);
+            for (const arrow of connArrows) {
+              if (processedFcArrows.has(arrow.id)) continue;
+              if (frameDragChildren.current!.has(arrow.id)) continue;
+              processedFcArrows.add(arrow.id);
+              const curArrow = fcState.objects.get(arrow.id);
+              if (curArrow) {
+                batchUpdates.push({
+                  id: arrow.id,
+                  updates: {
+                    x: curArrow.x,
+                    y: curArrow.y,
+                    width: curArrow.width,
+                    height: curArrow.height,
+                    properties: curArrow.properties,
+                  },
+                });
+              }
+            }
+          }
+        });
+      }
+
+      broadcastToLiveChannel('object_move_batch', {
+        updates: batchUpdates,
+        senderId: state.userId,
+      });
     },
     []
   );
+
+  // Build a consolidated objects map for all currently transforming nodes.
+  // This reads each Transformer node's live Konva attrs so arrows connecting
+  // two transforming objects are computed with BOTH at their new positions.
+  const buildTransformConsolidated = useCallback(() => {
+    const state = useBoardObjects.getState();
+    const consolidated = new Map(state.objects);
+    const transformer = stageRef.current?.findOne('Transformer') as Konva.Transformer | null;
+    if (!transformer) return consolidated;
+
+    const nodes = transformer.nodes();
+    for (const node of nodes) {
+      const nid = node.id();
+      const existing = consolidated.get(nid);
+      if (!existing) continue;
+
+      const scaleX = node.scaleX();
+      const scaleY = node.scaleY();
+      const patched: WhiteboardObject = {
+        ...existing,
+        x: existing.object_type === 'circle'
+          ? node.x() - Math.max(10, node.width() * scaleX) / 2
+          : node.x(),
+        y: existing.object_type === 'circle'
+          ? node.y() - Math.max(10, node.height() * scaleY) / 2
+          : node.y(),
+        width: existing.object_type === 'sticky_note'
+          ? Math.max(10, existing.width * scaleX)
+          : Math.max(10, node.width() * scaleX),
+        height: existing.object_type === 'sticky_note'
+          ? Math.max(10, existing.height * scaleY)
+          : Math.max(10, node.height() * scaleY),
+        rotation: node.rotation(),
+      };
+      consolidated.set(nid, patched);
+    }
+    return consolidated;
+  }, []);
 
   // Broadcast transform state during resize/rotate for real-time sync
   const handleTransform = useCallback(
@@ -893,7 +1615,7 @@ export default function Canvas({
         updates.y = attrs.y - attrs.height / 2;
       }
 
-      if (obj.object_type === 'arrow' && obj.properties.points) {
+      if ((obj.object_type === 'arrow' || obj.object_type === 'line') && obj.properties.points) {
         const oldPoints = obj.properties.points as number[];
         const newPoints = oldPoints.map((val: number, i: number) =>
           i % 2 === 0 ? val * scale.scaleX : val * scale.scaleY
@@ -901,74 +1623,156 @@ export default function Canvas({
         updates.properties = { ...obj.properties, points: newPoints };
       }
 
-      // Update connected arrow Konva nodes imperatively (no store update)
-      // to avoid React re-renders that cause jerkiness during transform.
+      // Update connected arrows using consolidated positions of ALL
+      // transforming objects so arrows between two resizing shapes are correct.
+      // IMPORTANT: Do NOT update the Zustand store here — changing `objects`
+      // triggers TransformWrapper's useEffect which re-runs transformer.nodes(),
+      // resetting Konva's internal rotation/scale state and causing spin acceleration.
+      // Instead we update arrow Konva nodes directly and use React state overrides
+      // for the UI indicators (green circles, white square handles).
       const stage = stageRef.current;
-      if (
-        stage &&
-        obj.object_type !== 'arrow'
-      ) {
-        const tempObj = { ...obj, ...updates } as WhiteboardObject;
-        const tempObjects = new Map(state.objects);
-        tempObjects.set(id, tempObj);
+      if (stage && obj.object_type !== 'arrow' && obj.object_type !== 'line') {
+        const consolidated = buildTransformConsolidated();
+        const processedArrows = new Set<string>();
 
-        const connectedArrows = getConnectedArrows(state.objects, id);
-        for (const arrow of connectedArrows) {
-          const result = computeArrowEndpoints(arrow, tempObjects);
-          if (result) {
-            const arrowNode = stage.findOne('#' + arrow.id);
-            if (arrowNode) {
-              arrowNode.setAttrs({
-                x: result.x,
-                y: result.y,
-                points: result.points,
-              });
+        // Compute live arrow endpoint positions for UI overlays
+        const liveEndpoints: Array<{
+          arrowId: string;
+          startX: number; startY: number;
+          endX: number; endY: number;
+          startObjectId?: string; endObjectId?: string;
+          startAnchorSide?: string; endAnchorSide?: string;
+        }> = [];
+
+        // Process arrows for ALL selected objects (deduped)
+        state.selectedIds.forEach((sid) => {
+          const sobj = consolidated.get(sid);
+          if (!sobj || sobj.object_type === 'arrow') return;
+
+          const connectedArrows = getConnectedArrows(consolidated, sid);
+          for (const arrow of connectedArrows) {
+            if (processedArrows.has(arrow.id)) continue;
+            processedArrows.add(arrow.id);
+
+            const result = computeArrowEndpoints(arrow, consolidated);
+            if (result) {
+              // Update arrow Konva node directly (no store write)
+              const arrowNode = stage.findOne('#' + arrow.id);
+              if (arrowNode) {
+                arrowNode.setAttrs({
+                  x: result.x,
+                  y: result.y,
+                  points: result.points,
+                });
+              }
+              // Track for live endpoint handles if this arrow is selected
+              if (state.selectedIds.has(arrow.id)) {
+                liveEndpoints.push({
+                  arrowId: arrow.id,
+                  startX: result.x + result.points[0],
+                  startY: result.y + result.points[1],
+                  endX: result.x + result.points[2],
+                  endY: result.y + result.points[3],
+                  startObjectId: arrow.properties.startObjectId,
+                  endObjectId: arrow.properties.endObjectId,
+                  startAnchorSide: arrow.properties.startAnchorSide,
+                  endAnchorSide: arrow.properties.endAnchorSide,
+                });
+              }
             }
           }
-        }
+        });
+
+        // Set live arrow endpoint overrides for white square handles
+        setTransformArrowEndpoints(liveEndpoints.length > 0 ? liveEndpoints : null);
+
+        // Compute live anchor connection indicators from consolidated positions
+        const liveConns: Array<{ x: number; y: number; side: string }> = [];
+        state.selectedIds.forEach((aid) => {
+          const arrowObj = consolidated.get(aid);
+          if (!arrowObj || arrowObj.object_type !== 'arrow') return;
+          const { startObjectId, startAnchorSide, endObjectId, endAnchorSide } =
+            arrowObj.properties;
+          if (startObjectId && startAnchorSide) {
+            const connObj = consolidated.get(startObjectId as string);
+            if (connObj) {
+              const anchor = getAnchorBySide(connObj, startAnchorSide as string);
+              if (anchor) liveConns.push(anchor);
+            }
+          }
+          if (endObjectId && endAnchorSide) {
+            const connObj = consolidated.get(endObjectId as string);
+            if (connObj) {
+              const anchor = getAnchorBySide(connObj, endAnchorSide as string);
+              if (anchor) liveConns.push(anchor);
+            }
+          }
+        });
+        setTransformConnections(liveConns.length > 0 ? liveConns : null);
+
         stage.batchDraw();
       }
 
       // Throttle broadcasts
       const now = Date.now();
       if (now - lastMoveRef.current < OBJECT_SYNC_THROTTLE_MS) return;
+      // eslint-disable-next-line react-hooks/immutability -- mutating ref.current is the standard React pattern
       lastMoveRef.current = now;
 
-      broadcastToLiveChannel('object_move', {
-        id,
-        updates,
-        senderId: state.userId,
-      });
+      // Broadcast ALL transforming objects as a single batch so the remote
+      // applies them in one Zustand set() — prevents tearing during group resize
+      const broadcastConsolidated = buildTransformConsolidated();
+      const batchUpdates: Array<{id: string; updates: Partial<WhiteboardObject>}> = [];
+      const broadcastedArrows = new Set<string>();
 
-      // Broadcast connected arrow positions so other clients see them move
-      if (
-        stage &&
-        obj.object_type !== 'arrow'
-      ) {
-        const tempObj = { ...obj, ...updates } as WhiteboardObject;
-        const tempObjects = new Map(state.objects);
-        tempObjects.set(id, tempObj);
+      state.selectedIds.forEach((sid) => {
+        const sobj = broadcastConsolidated.get(sid);
+        if (!sobj) return;
 
-        const connectedArrows = getConnectedArrows(state.objects, id);
-        for (const arrow of connectedArrows) {
-          const result = computeArrowEndpoints(arrow, tempObjects);
-          if (result) {
-            broadcastToLiveChannel('object_move', {
-              id: arrow.id,
-              updates: {
-                x: result.x,
-                y: result.y,
-                width: result.width,
-                height: result.height,
-                properties: { ...arrow.properties, points: result.points },
-              },
-              senderId: state.userId,
-            });
+        const objUpdates: Partial<WhiteboardObject> = {
+          x: sobj.x,
+          y: sobj.y,
+          width: sobj.width,
+          height: sobj.height,
+          rotation: sobj.rotation,
+        };
+
+        if (sobj.object_type === 'arrow' && sobj.properties?.points) {
+          objUpdates.properties = sobj.properties;
+        }
+
+        batchUpdates.push({ id: sid, updates: objUpdates });
+
+        // Include connected arrows
+        if (sobj.object_type !== 'arrow' && sobj.object_type !== 'line') {
+          const connectedArrows = getConnectedArrows(broadcastConsolidated, sid);
+          for (const arrow of connectedArrows) {
+            if (broadcastedArrows.has(arrow.id)) continue;
+            broadcastedArrows.add(arrow.id);
+
+            const result = computeArrowEndpoints(arrow, broadcastConsolidated);
+            if (result) {
+              batchUpdates.push({
+                id: arrow.id,
+                updates: {
+                  x: result.x,
+                  y: result.y,
+                  width: result.width,
+                  height: result.height,
+                  properties: { ...arrow.properties, points: result.points },
+                },
+              });
+            }
           }
         }
-      }
+      });
+
+      broadcastToLiveChannel('object_move_batch', {
+        updates: batchUpdates,
+        senderId: state.userId,
+      });
     },
-    []
+    [buildTransformConsolidated]
   );
 
   // Handle text changes (final persist on blur)
@@ -980,6 +1784,21 @@ export default function Canvas({
           text,
         },
         updated_at: new Date().toISOString(),
+      });
+    },
+    [updateObject]
+  );
+
+  // Handle frame title changes
+  const handleTitleChange = useCallback(
+    (id: string, title: string) => {
+      updateObject(id, {
+        properties: {
+          ...useBoardObjects.getState().objects.get(id)?.properties,
+          title,
+        },
+        updated_at: new Date().toISOString(),
+        version: (useBoardObjects.getState().objects.get(id)?.version || 0) + 1,
       });
     },
     [updateObject]
@@ -1009,6 +1828,10 @@ export default function Canvas({
       attrs: { x: number; y: number; width: number; height: number; rotation: number },
       scale: { scaleX: number; scaleY: number }
     ) => {
+      // Clear live transform visual overrides
+      setTransformConnections(null);
+      setTransformArrowEndpoints(null);
+
       const obj = useBoardObjects.getState().objects.get(id);
       if (!obj) return;
 
@@ -1032,7 +1855,7 @@ export default function Canvas({
       }
 
       // Line/Arrow: scale the points array to match new dimensions
-      if (obj.object_type === 'arrow' && obj.properties.points) {
+      if ((obj.object_type === 'arrow' || obj.object_type === 'line') && obj.properties.points) {
         const oldPoints = obj.properties.points as number[];
         const newPoints = oldPoints.map((val: number, i: number) =>
           i % 2 === 0 ? val * scale.scaleX : val * scale.scaleY
@@ -1043,7 +1866,7 @@ export default function Canvas({
       updateObject(id, updates);
 
       // Update connected arrows after transform
-      if (obj.object_type !== 'arrow') {
+      if (obj.object_type !== 'arrow' && obj.object_type !== 'line') {
         const updatedState = useBoardObjects.getState();
         const connectedArrows = getConnectedArrows(updatedState.objects, id);
         for (const arrow of connectedArrows) {
@@ -1079,6 +1902,7 @@ export default function Canvas({
   const viewportY = -panOffset.y / zoom;
   const visibleObjects = useMemo(() => {
     const arrows: WhiteboardObject[] = [];
+    const frames: WhiteboardObject[] = [];
     const others: WhiteboardObject[] = [];
     objects.forEach((obj) => {
       if (
@@ -1086,15 +1910,18 @@ export default function Canvas({
           obj, viewportX, viewportY, dimensions.width, dimensions.height, zoom
         )
       ) {
-        // Arrows render first (behind other objects) so shapes cover overlap
-        if (obj.object_type === 'arrow') {
+        // Arrows and lines render first (behind other objects) so shapes cover overlap
+        if (obj.object_type === 'arrow' || obj.object_type === 'line') {
           arrows.push(obj);
+        } else if (obj.object_type === 'frame') {
+          // Frames render behind other shapes so contained objects stay interactive
+          frames.push(obj);
         } else {
           others.push(obj);
         }
       }
     });
-    return [...arrows, ...others];
+    return [...arrows, ...frames, ...others];
   }, [objects, viewportX, viewportY, dimensions.width, dimensions.height, zoom]);
 
   // Render shape based on type
@@ -1123,6 +1950,26 @@ export default function Canvas({
         return <CircleShape key={obj.id} {...common} />;
       case 'arrow':
         return <ArrowShape key={obj.id} {...common} />;
+      case 'line':
+        return <LineShape key={obj.id} {...common} />;
+      case 'text':
+        return (
+          <TextBox
+            key={obj.id}
+            {...common}
+            onTextChange={handleTextChange}
+            onTextInput={handleTextInput}
+            autoEdit={autoEditTextId === obj.id}
+          />
+        );
+      case 'frame':
+        return (
+          <Frame
+            key={obj.id}
+            {...common}
+            onTitleChange={handleTitleChange}
+          />
+        );
       default:
         return null;
     }
@@ -1147,16 +1994,18 @@ export default function Canvas({
   }, [arrowTargetObjId, objects]);
 
   // Filter out arrows/lines from transformer (they use custom handles, no bounding box)
+  // Also hide transformer in pan mode so resize/rotate handles don't interfere
   const transformerSelectedIds = useMemo(() => {
+    if (activeTool === 'pan') return new Set<string>();
     const filtered = new Set<string>();
     selectedIds.forEach((id) => {
       const obj = objects.get(id);
-      if (obj && obj.object_type !== 'arrow') {
+      if (obj && obj.object_type !== 'arrow' && obj.object_type !== 'line') {
         filtered.add(id);
       }
     });
     return filtered;
-  }, [selectedIds, objects]);
+  }, [selectedIds, objects, activeTool]);
 
   // Compute selected arrow endpoints for draggable handles
   const selectedArrowEndpoints = useMemo(() => {
@@ -1175,7 +2024,7 @@ export default function Canvas({
 
     selectedIds.forEach((id) => {
       const obj = objects.get(id);
-      if (obj && obj.object_type === 'arrow') {
+      if (obj && (obj.object_type === 'arrow' || obj.object_type === 'line')) {
         const points = (obj.properties.points as number[]) || [0, 0, obj.width, obj.height];
         const sx = obj.x + points[0];
         const sy = obj.y + points[1];
@@ -1223,7 +2072,11 @@ export default function Canvas({
   }, [selectedArrowEndpoints, objects]);
 
   const cursorStyle =
-    activeTool === 'select' ? 'default' : 'crosshair';
+    activeTool === 'pan'
+      ? (isPanning ? 'grabbing' : 'grab')
+      : activeTool === 'select'
+        ? (isMarqueeSelecting.current ? 'crosshair' : 'default')
+        : 'crosshair';
 
   return (
     <div
@@ -1238,7 +2091,7 @@ export default function Canvas({
         scaleY={zoom}
         x={panOffset.x}
         y={panOffset.y}
-        draggable={activeTool === 'select'}
+        draggable={activeTool === 'select' || activeTool === 'pan'}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -1263,7 +2116,7 @@ export default function Canvas({
         </Layer>
 
         {/* Objects layer */}
-        <Layer>
+        <Layer listening={activeTool !== 'pan'}>
           {visibleObjects.map((obj) => renderObject(obj))}
         </Layer>
 
@@ -1276,6 +2129,21 @@ export default function Canvas({
             onTransform={handleTransform}
             objects={objects}
           />
+          {/* Line drawing preview */}
+          {drawingPreview && activeTool === 'line' && (
+            <Line
+              points={[
+                drawingPreview.startX,
+                drawingPreview.startY,
+                drawingPreview.currentX,
+                drawingPreview.currentY,
+              ]}
+              stroke="#3B82F6"
+              strokeWidth={2 / zoom}
+              dash={[8 / zoom, 4 / zoom]}
+              listening={false}
+            />
+          )}
           {/* Arrow drawing preview */}
           {drawingPreview && activeTool === 'arrow' && (
             <Arrow
@@ -1345,7 +2213,7 @@ export default function Canvas({
             );
           })}
           {/* Arrow/line square handles for selected arrows */}
-          {selectedArrowEndpoints.map(({ arrowId, startX, startY, endX, endY }) => {
+          {(transformArrowEndpoints ?? selectedArrowEndpoints).map(({ arrowId, startX, startY, endX, endY }) => {
             const hs = 8 / zoom;
             const hhs = hs / 2;
             return (
@@ -1390,7 +2258,7 @@ export default function Canvas({
             );
           })}
           {/* Connected object anchor indicators for selected arrows */}
-          {selectedArrowConnections.map((conn, i) => {
+          {(transformConnections ?? selectedArrowConnections).map((conn, i) => {
             const s = 3 / zoom;
             return (
               <React.Fragment key={`conn-anchor-${i}`}>
@@ -1450,7 +2318,7 @@ export default function Canvas({
               </React.Fragment>
             );
           })}
-          {previewRect && previewRect.width > 0 && previewRect.height > 0 && activeTool !== 'arrow' && (
+          {previewRect && previewRect.width > 0 && previewRect.height > 0 && activeTool !== 'arrow' && activeTool !== 'line' && (
             activeTool === 'circle' ? (
               <Ellipse
                 x={previewRect.x + previewRect.width / 2}
@@ -1474,6 +2342,20 @@ export default function Canvas({
                 listening={false}
               />
             )
+          )}
+          {/* Marquee selection rectangle */}
+          {selectionRect && (
+            <Rect
+              x={Math.min(selectionRect.startX, selectionRect.currentX)}
+              y={Math.min(selectionRect.startY, selectionRect.currentY)}
+              width={Math.abs(selectionRect.currentX - selectionRect.startX)}
+              height={Math.abs(selectionRect.currentY - selectionRect.startY)}
+              fill="rgba(59, 130, 246, 0.1)"
+              stroke="#3B82F6"
+              strokeWidth={1 / zoom}
+              dash={[4 / zoom, 4 / zoom]}
+              listening={false}
+            />
           )}
         </Layer>
 

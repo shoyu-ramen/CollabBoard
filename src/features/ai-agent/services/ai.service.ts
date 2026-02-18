@@ -13,7 +13,10 @@ import type {
 
 const MAX_TOOL_ITERATIONS = 10;
 
-function buildSystemPrompt(boardState: BoardStateSummary[]): string {
+export function buildSystemPrompt(
+  boardState: BoardStateSummary[],
+  viewportCenter?: { x: number; y: number }
+): string {
   const objectsSummary =
     boardState.length === 0
       ? 'The board is currently empty.'
@@ -37,10 +40,10 @@ GUIDELINES:
 - Always confirm what you did after performing actions.
 - If you need to understand the current board state before making changes, use getBoardState first.
 - Keep text concise for sticky notes (they have limited space).
-- Place new objects in a visible area (positive x,y coordinates, typically 100-1500 range).`;
+- Place new objects in a visible area (positive x,y coordinates, typically 100-1500 range).${viewportCenter ? `\n\nVIEWPORT: The user is currently viewing the area around (${Math.round(viewportCenter.x)}, ${Math.round(viewportCenter.y)}). Place new objects near this area so they are immediately visible.` : ''}`;
 }
 
-async function callClaude(
+export async function callClaude(
   messages: ClaudeMessage[],
   systemPrompt: string
 ): Promise<ClaudeResponse> {
@@ -77,9 +80,10 @@ export async function processAIMessage(
   userMessage: string,
   boardId: string,
   userId: string,
-  boardState: BoardStateSummary[]
+  boardState: BoardStateSummary[],
+  viewportCenter?: { x: number; y: number }
 ): Promise<{ reply: string; toolCalls: ToolCallResult[] }> {
-  const systemPrompt = buildSystemPrompt(boardState);
+  const systemPrompt = buildSystemPrompt(boardState, viewportCenter);
   const allToolCalls: ToolCallResult[] = [];
 
   const messages: ClaudeMessage[] = [

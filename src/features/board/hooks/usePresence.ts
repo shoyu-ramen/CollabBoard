@@ -42,6 +42,7 @@ export function usePresence({
       color: CURSOR_COLORS[colorIndex],
       onlineAt: new Date().toISOString(),
     };
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: show self before subscription connects
     setOnlineUsers([selfUser]);
 
     channel

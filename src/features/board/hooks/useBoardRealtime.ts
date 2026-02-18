@@ -5,6 +5,10 @@ import { createClient } from '@/lib/supabase/client';
 import { CURSOR_THROTTLE_MS, CURSOR_COLORS } from '@/lib/constants';
 import { useBoardObjects } from './useBoardObjects';
 import { shouldApplyRemoteChange } from '../services/sync.service';
+import {
+  getConnectedArrows,
+  computeArrowEndpoints,
+} from '../utils/connector.utils';
 import type { WhiteboardObject, PresenceUser, CursorPosition } from '../types';
 import type {
   RealtimeChannel,
@@ -17,7 +21,7 @@ interface UseBoardRealtimeOptions {
   userName: string | null;
 }
 
-function getUserColor(userId: string): string {
+export function getUserColor(userId: string): string {
   const index =
     Math.abs(
       userId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
@@ -58,6 +62,45 @@ function flushPendingBroadcasts() {
   }
 }
 
+/**
+ * After receiving shape position updates from a remote user, recompute
+ * any connected arrows so they track the shapes' new anchor positions.
+ */
+function recomputeConnectedArrows(shapeIds: string[]) {
+  const state = useBoardObjects.getState();
+  const objects = state.objects;
+  const arrowUpdates: Array<{id: string; updates: Partial<WhiteboardObject>}> = [];
+  const processed = new Set<string>();
+
+  for (const shapeId of shapeIds) {
+    const connectedArrows = getConnectedArrows(objects, shapeId);
+    for (const arrow of connectedArrows) {
+      if (processed.has(arrow.id)) continue;
+      processed.add(arrow.id);
+
+      const result = computeArrowEndpoints(arrow, objects);
+      if (result) {
+        arrowUpdates.push({
+          id: arrow.id,
+          updates: {
+            x: result.x,
+            y: result.y,
+            width: result.width,
+            height: result.height,
+            properties: { ...arrow.properties, points: result.points },
+          },
+        });
+      }
+    }
+  }
+
+  if (arrowUpdates.length > 0) {
+    state.batchUpdateObjects(arrowUpdates);
+  }
+}
+
+export type ConnectionStatus = 'connected' | 'disconnected' | 'reconnecting';
+
 export function useBoardRealtime({
   boardId,
   userId,
@@ -67,6 +110,7 @@ export function useBoardRealtime({
   const [remoteCursors, setRemoteCursors] = useState<
     Map<string, CursorPosition>
   >(new Map());
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const liveChannelRef = useRef<RealtimeChannel | null>(null);
   const subscribedRef = useRef(false);
   const lastBroadcastRef = useRef<number>(0);
@@ -127,7 +171,34 @@ export function useBoardRealtime({
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          setConnectionStatus((prev) => {
+            if (prev === 'reconnecting') {
+              // Refetch full board state on reconnect to catch missed updates
+              const store = useBoardObjects.getState();
+              if (boardId && store.boardId) {
+                supabase
+                  .from('whiteboard_objects')
+                  .select('*')
+                  .eq('board_id', boardId)
+                  .then(({ data }) => {
+                    if (data) {
+                      store.setObjects(data as unknown as WhiteboardObject[]);
+                    }
+                  });
+              }
+            }
+            return 'connected';
+          });
+        } else if (status === 'CHANNEL_ERROR') {
+          setConnectionStatus('reconnecting');
+        } else if (status === 'CLOSED') {
+          setConnectionStatus('disconnected');
+        } else if (status === 'TIMED_OUT') {
+          setConnectionStatus('reconnecting');
+        }
+      });
 
     return () => {
       supabase.removeChannel(syncChannel);
@@ -149,6 +220,7 @@ export function useBoardRealtime({
       color: userColor,
       onlineAt: new Date().toISOString(),
     };
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: show self before subscription connects
     setOnlineUsers([selfUser]);
 
     const liveChannel = supabase.channel(`board:live:${boardId}`, {
@@ -225,6 +297,36 @@ export function useBoardRealtime({
         const store = useBoardObjects.getState();
         if (store.getObject(id)) {
           store.updateObject(id, updates);
+          // Recompute connected arrows when a shape moves
+          const obj = useBoardObjects.getState().objects.get(id);
+          if (obj && obj.object_type !== 'arrow') {
+            recomputeConnectedArrows([id]);
+          }
+        }
+      }
+    );
+
+    // Batched move/resize broadcasts (group drag/resize) — applies all
+    // updates in a single Zustand set() to avoid tearing on the remote
+    liveChannel.on(
+      'broadcast',
+      { event: 'object_move_batch' },
+      ({ payload }) => {
+        const { updates, senderId } = payload as {
+          updates: Array<{id: string; updates: Partial<WhiteboardObject>}>;
+          senderId: string;
+        };
+        if (senderId === userId) return;
+        useBoardObjects.getState().batchUpdateObjects(updates);
+        // Recompute connected arrows for all updated shapes
+        const shapeIds = updates
+          .map((u) => u.id)
+          .filter((id) => {
+            const obj = useBoardObjects.getState().objects.get(id);
+            return obj && obj.object_type !== 'arrow';
+          });
+        if (shapeIds.length > 0) {
+          recomputeConnectedArrows(shapeIds);
         }
       }
     );
@@ -328,5 +430,5 @@ export function useBoardRealtime({
     [userId, userName]
   );
 
-  return { onlineUsers, remoteCursors, broadcastCursor };
+  return { onlineUsers, remoteCursors, broadcastCursor, connectionStatus };
 }

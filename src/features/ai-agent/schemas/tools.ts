@@ -30,15 +30,46 @@ export const AI_TOOLS: ClaudeToolDefinition[] = [
     },
   },
   {
+    name: 'createText',
+    description:
+      'Create a standalone text element on the whiteboard. Use this for headings, labels, or any text without a sticky note background.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        text: {
+          type: 'string',
+          description: 'The text content',
+        },
+        x: {
+          type: 'number',
+          description: 'X position on the canvas (default: 100)',
+        },
+        y: {
+          type: 'number',
+          description: 'Y position on the canvas (default: 100)',
+        },
+        fontSize: {
+          type: 'number',
+          description: 'Font size in pixels (default: 20)',
+        },
+        color: {
+          type: 'string',
+          description: 'Text color as hex (default: "#1a1a1a")',
+        },
+      },
+      required: ['text'],
+    },
+  },
+  {
     name: 'createShape',
     description:
-      'Create a shape (rectangle or circle) on the whiteboard.',
+      'Create a shape (rectangle, circle, or line) on the whiteboard.',
     input_schema: {
       type: 'object',
       properties: {
         type: {
           type: 'string',
-          enum: ['rectangle', 'circle'],
+          enum: ['rectangle', 'circle', 'line'],
           description: 'The type of shape to create',
         },
         x: {
@@ -99,32 +130,50 @@ export const AI_TOOLS: ClaudeToolDefinition[] = [
   {
     name: 'createConnector',
     description:
-      'Create an arrow between two points on the whiteboard.',
+      'Create an arrow/connector between two objects or two points on the whiteboard. Prefer using fromId/toId to connect objects so the arrow tracks them when they move.',
     input_schema: {
       type: 'object',
       properties: {
+        fromId: {
+          type: 'string',
+          description: 'ID of the source object to connect from',
+        },
+        toId: {
+          type: 'string',
+          description: 'ID of the target object to connect to',
+        },
+        fromSide: {
+          type: 'string',
+          enum: ['top-50', 'right-50', 'bottom-50', 'left-50'],
+          description: 'Anchor side on the source object (default: auto-computed)',
+        },
+        toSide: {
+          type: 'string',
+          enum: ['top-50', 'right-50', 'bottom-50', 'left-50'],
+          description: 'Anchor side on the target object (default: auto-computed)',
+        },
         x1: {
           type: 'number',
-          description: 'Start X coordinate',
+          description: 'Start X coordinate (fallback if fromId not provided)',
         },
         y1: {
           type: 'number',
-          description: 'Start Y coordinate',
+          description: 'Start Y coordinate (fallback if fromId not provided)',
         },
         x2: {
           type: 'number',
-          description: 'End X coordinate',
+          description: 'End X coordinate (fallback if toId not provided)',
         },
         y2: {
           type: 'number',
-          description: 'End Y coordinate',
+          description: 'End Y coordinate (fallback if toId not provided)',
         },
         color: {
           type: 'string',
           description: 'Arrow color (default: "#000000")',
         },
       },
-      required: ['x1', 'y1', 'x2', 'y2'],
+      required: [],
     },
   },
   {

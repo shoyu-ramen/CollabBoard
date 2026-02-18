@@ -3,20 +3,28 @@
 import React from 'react';
 import {
   MousePointer2,
+  Hand,
   StickyNote,
   Square,
   Circle,
   ArrowRight,
+  Minus,
+  Type,
+  LayoutGrid,
 } from 'lucide-react';
 import type { ToolType } from '../types';
 import { useBoardObjects } from '../hooks/useBoardObjects';
 
 const tools: { type: ToolType; label: string; icon: React.ElementType }[] = [
   { type: 'select', label: 'Select', icon: MousePointer2 },
+  { type: 'pan', label: 'Pan', icon: Hand },
+  { type: 'text', label: 'Text', icon: Type },
   { type: 'sticky_note', label: 'Sticky Note', icon: StickyNote },
   { type: 'rectangle', label: 'Rectangle', icon: Square },
   { type: 'circle', label: 'Circle', icon: Circle },
+  { type: 'line', label: 'Line', icon: Minus },
   { type: 'arrow', label: 'Arrow', icon: ArrowRight },
+  { type: 'frame', label: 'Frame', icon: LayoutGrid },
 ];
 
 export default function Toolbar() {

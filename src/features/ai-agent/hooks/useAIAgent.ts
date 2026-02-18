@@ -3,6 +3,9 @@
 import { useState, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import type { AIMessage, AIResponseBody } from '../types';
+import { useBoardObjects } from '@/features/board/hooks/useBoardObjects';
+import { broadcastToLiveChannel } from '@/features/board/hooks/useBoardRealtime';
+import { useCanvas } from '@/features/board/hooks/useCanvas';
 
 export function useAIAgent(boardId: string) {
   const [messages, setMessages] = useState<AIMessage[]>([]);
@@ -31,12 +34,20 @@ export function useAIAgent(boardId: string) {
       setIsLoading(true);
 
       try {
+        // Compute viewport center so AI places objects near the visible area
+        const { panOffset, zoom } = useCanvas.getState();
+        const viewportCenter = {
+          x: (-panOffset.x + window.innerWidth / 2) / zoom,
+          y: (-panOffset.y + window.innerHeight / 2) / zoom,
+        };
+
         const response = await fetch('/api/ai', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             message: text.trim(),
             boardId,
+            viewportCenter,
           }),
         });
 
@@ -46,6 +57,20 @@ export function useAIAgent(boardId: string) {
 
         if (!response.ok) {
           throw new Error(data.error || 'Failed to get AI response');
+        }
+
+        // Hydrate local store with created objects for instant rendering
+        if (data.createdObjects && data.createdObjects.length > 0) {
+          const store = useBoardObjects.getState();
+          for (const obj of data.createdObjects) {
+            // addObject is state-only (no DB write) — the object already exists in DB
+            store.addObject(obj);
+            // Broadcast to other clients for instant sync
+            broadcastToLiveChannel('object_create', {
+              object: obj,
+              senderId: store.userId,
+            });
+          }
         }
 
         const assistantMessage: AIMessage = {

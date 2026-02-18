@@ -12,13 +12,18 @@ import {
   DEFAULT_FRAME_WIDTH,
   DEFAULT_FRAME_HEIGHT,
   DEFAULT_STROKE_WIDTH,
+  DEFAULT_TEXT_FONT_SIZE,
+  DEFAULT_TEXT_COLOR,
+  DEFAULT_TEXT_FONT_FAMILY,
+  DEFAULT_LINE_COLOR,
+  DEFAULT_LINE_WIDTH,
 } from '@/lib/constants';
 
 /**
  * Strip HTML tags and decode common entities for server-side text sanitization.
  * This runs on AI-generated text before inserting into the database.
  */
-function sanitize(text: string): string {
+export function sanitize(text: string): string {
   return text
     .replace(/<[^>]*>/g, '')
     .replace(/&lt;/g, '<')
@@ -27,6 +32,36 @@ function sanitize(text: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#x27;/g, "'")
     .trim();
+}
+
+/**
+ * Compute anchor position on an object's bounding box for a given side.
+ * Supports midpoints (e.g. 'top-50', 'right-50') used by createConnector.
+ */
+export function getAnchorPosition(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  side: string
+): { x: number; y: number } {
+  switch (side) {
+    case 'top':
+    case 'top-50':
+      return { x: x + width / 2, y };
+    case 'right':
+    case 'right-50':
+      return { x: x + width, y: y + height / 2 };
+    case 'bottom':
+    case 'bottom-50':
+      return { x: x + width / 2, y: y + height };
+    case 'left':
+    case 'left-50':
+      return { x, y: y + height / 2 };
+    default:
+      // Default to center
+      return { x: x + width / 2, y: y + height / 2 };
+  }
 }
 
 interface InsertObject {
@@ -118,15 +153,92 @@ export async function executeTool(
       };
     }
 
-    case 'createShape': {
-      const shapeType = input.type as string;
-      if (!['rectangle', 'circle'].includes(shapeType)) {
+    case 'createText': {
+      const text = sanitize((input.text as string) || '');
+      const x = (input.x as number) ?? 100;
+      const y = (input.y as number) ?? 100;
+      const fontSize = (input.fontSize as number) ?? DEFAULT_TEXT_FONT_SIZE;
+      const color = (input.color as string) ?? DEFAULT_TEXT_COLOR;
+
+      const { id, error } = await insertObject(
+        boardId,
+        'text',
+        x,
+        y,
+        0,
+        0,
+        {
+          text,
+          fontSize,
+          fontFamily: DEFAULT_TEXT_FONT_FAMILY,
+          color,
+          textAlign: 'left',
+        },
+        userId
+      );
+
+      if (error) {
         return {
           toolName,
           input,
-          result: `Invalid shape type: ${shapeType}. Must be rectangle or circle.`,
+          result: `Error creating text: ${error}`,
         };
       }
+      return {
+        toolName,
+        input,
+        result: `Created text "${text}" at (${x}, ${y})`,
+        objectId: id,
+      };
+    }
+
+    case 'createShape': {
+      const shapeType = input.type as string;
+      if (!['rectangle', 'circle', 'line'].includes(shapeType)) {
+        return {
+          toolName,
+          input,
+          result: `Invalid shape type: ${shapeType}. Must be rectangle, circle, or line.`,
+        };
+      }
+
+      if (shapeType === 'line') {
+        const x = (input.x as number) ?? 100;
+        const y = (input.y as number) ?? 100;
+        const width = (input.width as number) ?? 200;
+        const height = (input.height as number) ?? 0;
+        const color = (input.color as string) ?? DEFAULT_LINE_COLOR;
+
+        const { id, error } = await insertObject(
+          boardId,
+          'line',
+          x,
+          y,
+          width,
+          height,
+          {
+            stroke: color,
+            strokeWidth: DEFAULT_LINE_WIDTH,
+            points: [0, 0, width, height],
+          },
+          userId
+        );
+
+        if (error) {
+          return {
+            toolName,
+            input,
+            result: `Error creating line: ${error}`,
+          };
+        }
+        return {
+          toolName,
+          input,
+          result: `Created line from (${x}, ${y}) to (${x + width}, ${y + height})`,
+          objectId: id,
+        };
+      }
+
       const x = (input.x as number) ?? 100;
       const y = (input.y as number) ?? 100;
       const width = (input.width as number) ?? DEFAULT_SHAPE_WIDTH;
@@ -135,7 +247,7 @@ export async function executeTool(
 
       const properties: Record<string, unknown> = {
         fill: color,
-        stroke: color,
+        stroke: '#000000',
         strokeWidth: DEFAULT_STROKE_WIDTH,
       };
 
@@ -199,11 +311,83 @@ export async function executeTool(
     }
 
     case 'createConnector': {
-      const x1 = (input.x1 as number) ?? (input.x as number) ?? 100;
-      const y1 = (input.y1 as number) ?? (input.y as number) ?? 100;
-      const x2 = (input.x2 as number) ?? x1 + 200;
-      const y2 = (input.y2 as number) ?? y1;
+      const fromId = input.fromId as string | undefined;
+      const toId = input.toId as string | undefined;
+      const fromSide = (input.fromSide as string) || undefined;
+      const toSide = (input.toSide as string) || undefined;
       const color = (input.color as string) ?? '#000000';
+
+      let x1: number;
+      let y1: number;
+      let x2: number;
+      let y2: number;
+      let startObjectId: string | undefined;
+      let endObjectId: string | undefined;
+      let startAnchorSide: string | undefined;
+      let endAnchorSide: string | undefined;
+
+      // Look up source object if fromId is provided
+      if (fromId) {
+        const { data: fromObj } = await supabase
+          .from('whiteboard_objects')
+          .select('x, y, width, height, object_type')
+          .eq('id', fromId)
+          .eq('board_id', boardId)
+          .single();
+
+        if (!fromObj) {
+          return {
+            toolName,
+            input,
+            result: `Error: source object ${fromId} not found`,
+          };
+        }
+
+        startObjectId = fromId;
+        startAnchorSide = fromSide || 'right-50';
+        // Compute anchor position (midpoint of specified side)
+        const fw = fromObj.width as number;
+        const fh = fromObj.height as number;
+        const fx = fromObj.x as number;
+        const fy = fromObj.y as number;
+        const anchorPos = getAnchorPosition(fx, fy, fw, fh, startAnchorSide);
+        x1 = anchorPos.x;
+        y1 = anchorPos.y;
+      } else {
+        x1 = (input.x1 as number) ?? (input.x as number) ?? 100;
+        y1 = (input.y1 as number) ?? (input.y as number) ?? 100;
+      }
+
+      // Look up target object if toId is provided
+      if (toId) {
+        const { data: toObj } = await supabase
+          .from('whiteboard_objects')
+          .select('x, y, width, height, object_type')
+          .eq('id', toId)
+          .eq('board_id', boardId)
+          .single();
+
+        if (!toObj) {
+          return {
+            toolName,
+            input,
+            result: `Error: target object ${toId} not found`,
+          };
+        }
+
+        endObjectId = toId;
+        endAnchorSide = toSide || 'left-50';
+        const tw = toObj.width as number;
+        const th = toObj.height as number;
+        const tx = toObj.x as number;
+        const ty = toObj.y as number;
+        const anchorPos = getAnchorPosition(tx, ty, tw, th, endAnchorSide);
+        x2 = anchorPos.x;
+        y2 = anchorPos.y;
+      } else {
+        x2 = (input.x2 as number) ?? x1 + 200;
+        y2 = (input.y2 as number) ?? y1;
+      }
 
       const dx = x2 - x1;
       const dy = y2 - y1;
@@ -219,6 +403,10 @@ export async function executeTool(
           stroke: color,
           strokeWidth: 2,
           points: [0, 0, dx, dy],
+          startObjectId,
+          endObjectId,
+          startAnchorSide,
+          endAnchorSide,
         },
         userId
       );
@@ -227,13 +415,16 @@ export async function executeTool(
         return {
           toolName,
           input,
-          result: `Error creating arrow: ${error}`,
+          result: `Error creating connector: ${error}`,
         };
       }
+
+      const fromDesc = fromId ? `object ${fromId}` : `(${x1}, ${y1})`;
+      const toDesc = toId ? `object ${toId}` : `(${x2}, ${y2})`;
       return {
         toolName,
         input,
-        result: `Created arrow from (${x1}, ${y1}) to (${x2}, ${y2})`,
+        result: `Created connector from ${fromDesc} to ${toDesc}`,
         objectId: id,
       };
     }

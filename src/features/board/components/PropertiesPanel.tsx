@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useBoardObjects } from '../hooks/useBoardObjects';
+import { DEFAULT_STICKY_COLORS } from '@/lib/constants';
 import type { WhiteboardObject, ObjectProperties } from '../types';
 
 const FILL_PRESETS = [
@@ -13,11 +14,6 @@ const FILL_PRESETS = [
 const STROKE_PRESETS = [
   '#000000', '#3B82F6', '#EF4444', '#10B981',
   '#F59E0B', '#8B5CF6', '#EC4899', '#6B7280',
-];
-
-const NOTE_COLOR_PRESETS = [
-  '#FEF08A', '#BBF7D0', '#BFDBFE', '#FBCFE8',
-  '#FED7AA', '#E9D5FF', '#FECACA', '#E0E7FF',
 ];
 
 const STROKE_WIDTHS = [1, 2, 3, 4, 6, 8];
@@ -94,6 +90,9 @@ export default function PropertiesPanel() {
   const first = selectedObjects.length > 0 ? selectedObjects[0] : null;
   const objectType = first?.object_type;
   const isNote = objectType === 'sticky_note';
+  const isText = objectType === 'text';
+  const isLine = objectType === 'line';
+  const isFrame = objectType === 'frame';
   const isMixed =
     selectedObjects.length > 1 &&
     selectedObjects.some((o) => o.object_type !== objectType);
@@ -124,7 +123,7 @@ export default function PropertiesPanel() {
 
   // Keyboard shortcuts for bold/italic
   useEffect(() => {
-    if (!isNote || isMixed) return;
+    if ((!isNote && !isText) || isMixed) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
@@ -146,7 +145,7 @@ export default function PropertiesPanel() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isNote, isMixed, toggleBold, toggleItalic]);
+  }, [isNote, isText, isMixed, toggleBold, toggleItalic]);
 
   if (!first) return null;
 
@@ -157,10 +156,12 @@ export default function PropertiesPanel() {
   const hasStroke =
     objectType === 'rectangle' ||
     objectType === 'circle' ||
-    objectType === 'arrow';
+    objectType === 'arrow' ||
+    objectType === 'line';
   const hasStrokeWidth = hasStroke;
   const hasStrokeStyle = hasStroke;
   const isArrow = objectType === 'arrow';
+  const hasLineStyle = isArrow || isLine;
 
   const currentFill = first.properties.fill || '#3B82F6';
   const currentStroke = first.properties.stroke || '#000000';
@@ -168,6 +169,7 @@ export default function PropertiesPanel() {
   const currentNoteColor = first.properties.noteColor || '#FEF08A';
   const currentLineStyle: LineStyleOption =
     (first.properties.lineStyle as LineStyleOption) || (isArrow ? 'arrow' : 'solid');
+  const currentTextColor = first.properties.color || '#1a1a1a';
   const currentFontSize = first.properties.fontSize || 16;
 
   return (
@@ -183,6 +185,21 @@ export default function PropertiesPanel() {
         </span>
       </div>
 
+      {/* Frame title */}
+      {isFrame && !isMixed && (
+        <div>
+          <label className="text-xs font-medium text-gray-600 mb-1 block">
+            Title
+          </label>
+          <input
+            type="text"
+            value={first.properties.title || 'Frame'}
+            onChange={(e) => updateProperties({ title: e.target.value })}
+            className="w-full rounded border border-gray-200 px-2 py-1 text-sm text-gray-700 outline-none focus:border-blue-500"
+          />
+        </div>
+      )}
+
       {/* Note color (sticky notes) */}
       {isNote && !isMixed && (
         <div>
@@ -190,7 +207,7 @@ export default function PropertiesPanel() {
             Note Color
           </label>
           <div className="flex flex-wrap gap-1.5">
-            {NOTE_COLOR_PRESETS.map((c) => (
+            {DEFAULT_STICKY_COLORS.map((c) => (
               <ColorSwatch
                 key={c}
                 color={c}
@@ -228,6 +245,91 @@ export default function PropertiesPanel() {
 
       {/* Font style (sticky notes) */}
       {isNote && !isMixed && (
+        <div>
+          <label className="text-xs font-medium text-gray-600 mb-1 block">
+            Style
+          </label>
+          <div className="flex gap-1">
+            <button
+              onClick={toggleBold}
+              title="Bold (Cmd+B)"
+              className={`flex h-7 flex-1 items-center justify-center rounded text-xs font-bold transition-colors ${
+                isBold
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              B
+            </button>
+            <button
+              onClick={toggleItalic}
+              title="Italic (Cmd+I)"
+              className={`flex h-7 flex-1 items-center justify-center rounded text-xs italic transition-colors ${
+                isItalic
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              I
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Text color (standalone text) */}
+      {isText && !isMixed && (
+        <div>
+          <label className="text-xs font-medium text-gray-600 mb-1 block">
+            Text Color
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            {STROKE_PRESETS.map((c) => (
+              <ColorSwatch
+                key={c}
+                color={c}
+                isActive={currentTextColor === c}
+                onClick={() => updateProperties({ color: c })}
+              />
+            ))}
+          </div>
+          <div className="mt-1.5 flex items-center gap-2">
+            <input
+              type="color"
+              value={currentTextColor}
+              onChange={(e) => updateProperties({ color: e.target.value })}
+              className="h-6 w-6 cursor-pointer rounded border border-gray-200 p-0"
+            />
+            <span className="text-xs text-gray-400">Custom</span>
+          </div>
+        </div>
+      )}
+
+      {/* Font size (standalone text) */}
+      {isText && !isMixed && (
+        <div>
+          <label className="text-xs font-medium text-gray-600 mb-1 block">
+            Font Size
+          </label>
+          <div className="flex gap-1">
+            {FONT_SIZES.map((s) => (
+              <button
+                key={s}
+                onClick={() => updateProperties({ fontSize: s })}
+                className={`flex h-7 w-7 items-center justify-center rounded text-xs font-medium transition-colors ${
+                  currentFontSize === s
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Font style (standalone text) */}
+      {isText && !isMixed && (
         <div>
           <label className="text-xs font-medium text-gray-600 mb-1 block">
             Style
@@ -347,13 +449,15 @@ export default function PropertiesPanel() {
       {hasStrokeStyle && !isMixed && (
         <div>
           <label className="text-xs font-medium text-gray-600 mb-1 block">
-            {isArrow ? 'Line Style' : 'Border Style'}
+            {hasLineStyle ? 'Line Style' : 'Border Style'}
           </label>
           <div className="flex gap-1">
             {(
               isArrow
                 ? (['solid', 'dashed', 'dotted', 'arrow'] as LineStyleOption[])
-                : (['solid', 'dashed', 'dotted'] as LineStyleOption[])
+                : isLine
+                  ? (['solid', 'dashed', 'dotted'] as LineStyleOption[])
+                  : (['solid', 'dashed', 'dotted'] as LineStyleOption[])
             ).map((style) => (
               <button
                 key={style}
@@ -424,7 +528,7 @@ export default function PropertiesPanel() {
         </div>
       )}
 
-      {/* Mixed selection: show fill/stroke for all */}
+      {/* Mixed selection: show fill/stroke/stroke-width for all */}
       {isMixed && (
         <>
           <div>
@@ -454,6 +558,22 @@ export default function PropertiesPanel() {
                   isActive={false}
                   onClick={() => updateProperties({ stroke: c })}
                 />
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">
+              Border Width
+            </label>
+            <div className="flex gap-1">
+              {STROKE_WIDTHS.map((w) => (
+                <button
+                  key={w}
+                  onClick={() => updateProperties({ strokeWidth: w })}
+                  className="flex h-7 w-7 items-center justify-center rounded text-xs font-medium transition-colors bg-gray-100 text-gray-600 hover:bg-gray-200"
+                >
+                  {w}
+                </button>
               ))}
             </div>
           </div>

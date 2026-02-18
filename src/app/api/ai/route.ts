@@ -5,9 +5,9 @@ import { AI_RATE_LIMIT_PER_MINUTE } from '@/lib/constants';
 import type { AIRequestBody, AIResponseBody, BoardStateSummary } from '@/features/ai-agent/types';
 
 // Simple in-memory rate limiter
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+export const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 
-function checkRateLimit(userId: string): boolean {
+export function checkRateLimit(userId: string): boolean {
   const now = Date.now();
   const entry = rateLimitMap.get(userId);
 
@@ -109,12 +109,28 @@ export async function POST(request: NextRequest) {
       body.message,
       body.boardId,
       user.id,
-      boardState
+      boardState,
+      body.viewportCenter
     );
+
+    // Fetch created objects so the client can hydrate its local store immediately
+    const createdObjectIds = toolCalls
+      .map((tc) => tc.objectId)
+      .filter((id): id is string => !!id);
+
+    let createdObjects;
+    if (createdObjectIds.length > 0) {
+      const { data } = await serviceClient
+        .from('whiteboard_objects')
+        .select('*')
+        .in('id', createdObjectIds);
+      createdObjects = data ?? undefined;
+    }
 
     const response: AIResponseBody = {
       reply,
       toolCalls,
+      createdObjects,
     };
 
     return NextResponse.json(response);
