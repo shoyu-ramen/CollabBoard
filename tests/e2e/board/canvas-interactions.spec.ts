@@ -184,11 +184,8 @@ test.describe('Canvas interactions', () => {
     });
     expect(hasTransformer).toBe(true);
 
-    // Click on empty area (far from the object but within canvas bounds)
-    await page.mouse.click(
-      canvasBox!.x + Math.min(600, canvasBox!.width - 20),
-      canvasBox!.y + 50
-    );
+    // Press Escape to deselect
+    await page.keyboard.press('Escape');
     await page.waitForTimeout(300);
 
     // Verify deselected
