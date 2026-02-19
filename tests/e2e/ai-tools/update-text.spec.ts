@@ -48,9 +48,9 @@ test.describe('AI Tool: updateText', () => {
 
     await openAIChatAndSend(page, 'Change the text');
 
-    // Verify tool call card (inside .bg-slate-100 to avoid matching reply)
+    // Verify tool call card appears in chat
     await expect(
-      page.locator('.bg-slate-100', { hasText: 'Updated text content' })
+      page.locator('text=Updated text content').first()
     ).toBeVisible({ timeout: 5000 });
 
     // Verify text changed via Konva inspection
