@@ -2,25 +2,397 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ───────────────────────────────────────────────
+   Apple HIG Design Tokens
+   ─────────────────────────────────────────────── */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* System font stack */
+  --font-system: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', system-ui, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-system-rounded: -apple-system, BlinkMacSystemFont, 'SF Pro Rounded', system-ui, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-system-mono: 'SF Mono', ui-monospace, SFMono-Regular, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
+
+  /* Apple Type Scale */
+  --text-large-title: 34px;
+  --lh-large-title: 41px;
+  --ls-large-title: 0.37px;
+
+  --text-title1: 28px;
+  --lh-title1: 34px;
+  --ls-title1: 0.36px;
+
+  --text-title2: 22px;
+  --lh-title2: 28px;
+  --ls-title2: 0.35px;
+
+  --text-title3: 20px;
+  --lh-title3: 25px;
+  --ls-title3: 0.38px;
+
+  --text-headline: 17px;
+  --lh-headline: 22px;
+  --ls-headline: -0.41px;
+  --fw-headline: 600;
+
+  --text-body: 17px;
+  --lh-body: 22px;
+  --ls-body: -0.41px;
+
+  --text-callout: 16px;
+  --lh-callout: 21px;
+  --ls-callout: -0.32px;
+
+  --text-subheadline: 15px;
+  --lh-subheadline: 20px;
+  --ls-subheadline: -0.24px;
+
+  --text-footnote: 13px;
+  --lh-footnote: 18px;
+  --ls-footnote: -0.08px;
+
+  --text-caption1: 12px;
+  --lh-caption1: 16px;
+  --ls-caption1: 0px;
+
+  --text-caption2: 11px;
+  --lh-caption2: 13px;
+  --ls-caption2: 0.07px;
+
+  /* Apple System Colors — Light */
+  --system-blue: #007AFF;
+  --system-green: #34C759;
+  --system-indigo: #5856D6;
+  --system-orange: #FF9500;
+  --system-pink: #FF2D55;
+  --system-purple: #AF52DE;
+  --system-red: #FF3B30;
+  --system-teal: #5AC8FA;
+  --system-yellow: #FFCC00;
+
+  /* Background Hierarchy — Light */
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F2F2F7;
+  --bg-tertiary: #FFFFFF;
+
+  /* Grouped backgrounds — Light */
+  --bg-grouped-primary: #F2F2F7;
+  --bg-grouped-secondary: #FFFFFF;
+  --bg-grouped-tertiary: #F2F2F7;
+
+  /* Label Hierarchy — Light */
+  --label-primary: rgba(0, 0, 0, 0.85);
+  --label-secondary: rgba(60, 60, 67, 0.6);
+  --label-tertiary: rgba(60, 60, 67, 0.3);
+  --label-quaternary: rgba(60, 60, 67, 0.18);
+
+  /* Separators — Light */
+  --separator: rgba(60, 60, 67, 0.12);
+  --separator-opaque: #C6C6C8;
+
+  /* Fill Colors — Light */
+  --fill-primary: rgba(120, 120, 128, 0.2);
+  --fill-secondary: rgba(120, 120, 128, 0.16);
+  --fill-tertiary: rgba(118, 118, 128, 0.12);
+  --fill-quaternary: rgba(116, 116, 128, 0.08);
+
+  /* Material Backgrounds — Light */
+  --material-thin: rgba(255, 255, 255, 0.6);
+  --material-regular: rgba(255, 255, 255, 0.72);
+  --material-thick: rgba(255, 255, 255, 0.85);
+  --material-chrome: rgba(248, 248, 248, 0.92);
+
+  /* Legacy fallbacks */
+  --background: #FFFFFF;
+  --foreground: rgba(0, 0, 0, 0.85);
 }
 
 .dark {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  /* Apple System Colors — Dark */
+  --system-blue: #0A84FF;
+  --system-green: #30D158;
+  --system-indigo: #5E5CE6;
+  --system-orange: #FF9F0A;
+  --system-pink: #FF375F;
+  --system-purple: #BF5AF2;
+  --system-red: #FF453A;
+  --system-teal: #64D2FF;
+  --system-yellow: #FFD60A;
+
+  /* Background Hierarchy — Dark */
+  --bg-primary: #000000;
+  --bg-secondary: #1C1C1E;
+  --bg-tertiary: #2C2C2E;
+
+  /* Grouped backgrounds — Dark */
+  --bg-grouped-primary: #000000;
+  --bg-grouped-secondary: #1C1C1E;
+  --bg-grouped-tertiary: #2C2C2E;
+
+  /* Label Hierarchy — Dark */
+  --label-primary: rgba(255, 255, 255, 0.85);
+  --label-secondary: rgba(235, 235, 245, 0.6);
+  --label-tertiary: rgba(235, 235, 245, 0.3);
+  --label-quaternary: rgba(235, 235, 245, 0.16);
+
+  /* Separators — Dark */
+  --separator: rgba(84, 84, 88, 0.36);
+  --separator-opaque: #38383A;
+
+  /* Fill Colors — Dark */
+  --fill-primary: rgba(120, 120, 128, 0.36);
+  --fill-secondary: rgba(120, 120, 128, 0.32);
+  --fill-tertiary: rgba(118, 118, 128, 0.24);
+  --fill-quaternary: rgba(118, 118, 128, 0.18);
+
+  /* Material Backgrounds — Dark */
+  --material-thin: rgba(30, 30, 30, 0.6);
+  --material-regular: rgba(36, 36, 36, 0.72);
+  --material-thick: rgba(44, 44, 44, 0.85);
+  --material-chrome: rgba(28, 28, 30, 0.92);
+
+  /* Legacy fallbacks */
+  --background: #000000;
+  --foreground: rgba(255, 255, 255, 0.85);
 }
+
+/* ───────────────────────────────────────────────
+   Register tokens with Tailwind 4
+   ─────────────────────────────────────────────── */
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-system);
+  --font-mono: var(--font-system-mono);
 }
 
+/* ───────────────────────────────────────────────
+   Base Styles
+   ─────────────────────────────────────────────── */
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-primary);
+  color: var(--label-primary);
+  font-family: var(--font-system);
+}
+
+/* ───────────────────────────────────────────────
+   Apple Type Scale Utility Classes
+   ─────────────────────────────────────────────── */
+
+.hig-large-title {
+  font-size: var(--text-large-title);
+  line-height: var(--lh-large-title);
+  letter-spacing: var(--ls-large-title);
+  font-weight: 700;
+}
+
+.hig-title1 {
+  font-size: var(--text-title1);
+  line-height: var(--lh-title1);
+  letter-spacing: var(--ls-title1);
+  font-weight: 700;
+}
+
+.hig-title2 {
+  font-size: var(--text-title2);
+  line-height: var(--lh-title2);
+  letter-spacing: var(--ls-title2);
+  font-weight: 700;
+}
+
+.hig-title3 {
+  font-size: var(--text-title3);
+  line-height: var(--lh-title3);
+  letter-spacing: var(--ls-title3);
+  font-weight: 600;
+}
+
+.hig-headline {
+  font-size: var(--text-headline);
+  line-height: var(--lh-headline);
+  letter-spacing: var(--ls-headline);
+  font-weight: var(--fw-headline);
+}
+
+.hig-body {
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  letter-spacing: var(--ls-body);
+  font-weight: 400;
+}
+
+.hig-callout {
+  font-size: var(--text-callout);
+  line-height: var(--lh-callout);
+  letter-spacing: var(--ls-callout);
+  font-weight: 400;
+}
+
+.hig-subheadline {
+  font-size: var(--text-subheadline);
+  line-height: var(--lh-subheadline);
+  letter-spacing: var(--ls-subheadline);
+  font-weight: 400;
+}
+
+.hig-footnote {
+  font-size: var(--text-footnote);
+  line-height: var(--lh-footnote);
+  letter-spacing: var(--ls-footnote);
+  font-weight: 400;
+}
+
+.hig-caption1 {
+  font-size: var(--text-caption1);
+  line-height: var(--lh-caption1);
+  letter-spacing: var(--ls-caption1);
+  font-weight: 400;
+}
+
+.hig-caption2 {
+  font-size: var(--text-caption2);
+  line-height: var(--lh-caption2);
+  letter-spacing: var(--ls-caption2);
+  font-weight: 400;
+}
+
+/* ───────────────────────────────────────────────
+   Material / Vibrancy Utility Classes
+   ─────────────────────────────────────────────── */
+
+.hig-material-thin {
+  background: var(--material-thin);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.hig-material-regular {
+  background: var(--material-regular);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+}
+
+.hig-material-thick {
+  background: var(--material-thick);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+}
+
+.hig-material-chrome {
+  background: var(--material-chrome);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+/* ───────────────────────────────────────────────
+   Apple Corner Radius Utilities
+   ─────────────────────────────────────────────── */
+
+.hig-rounded-sm { border-radius: 8px; }
+.hig-rounded-md { border-radius: 10px; }
+.hig-rounded-lg { border-radius: 12px; }
+.hig-rounded-xl { border-radius: 16px; }
+.hig-rounded-2xl { border-radius: 20px; }
+
+/* ───────────────────────────────────────────────
+   Sheet Drag Indicator
+   ─────────────────────────────────────────────── */
+
+.hig-sheet-indicator {
+  width: 36px;
+  height: 5px;
+  border-radius: 2.5px;
+  background: var(--fill-primary);
+  margin: 6px auto 2px;
+}
+
+/* ───────────────────────────────────────────────
+   Pressable State (Apple press feel)
+   ─────────────────────────────────────────────── */
+
+.hig-pressable {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  cursor: pointer;
+}
+
+.hig-pressable:active {
+  opacity: 0.7;
+  transform: scale(0.97);
+}
+
+/* ───────────────────────────────────────────────
+   Spring-like Animations
+   ─────────────────────────────────────────────── */
+
+@keyframes hig-sheet-slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes hig-panel-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes hig-overlay-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.hig-sheet-enter {
+  animation: hig-sheet-slide-up 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.hig-panel-enter {
+  animation: hig-panel-slide-in 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.hig-overlay-enter {
+  animation: hig-overlay-fade 0.25s ease-out;
+}
+
+/* ───────────────────────────────────────────────
+   Reduced Motion
+   ─────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .hig-pressable:active {
+    opacity: 0.7;
+    transform: none;
+  }
+
+  .hig-sheet-enter,
+  .hig-panel-enter,
+  .hig-overlay-enter {
+    animation: none;
+  }
+}
+
+/* ───────────────────────────────────────────────
+   Safe Area Utilities
+   ─────────────────────────────────────────────── */
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.safe-area-top {
+  padding-top: env(safe-area-inset-top, 0px);
 }

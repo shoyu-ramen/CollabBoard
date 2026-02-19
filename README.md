@@ -99,11 +99,22 @@ Access control is enforced at multiple layers:
 
 ### Real-time Sync Flow
 
-1. Client makes an **optimistic local update** via Zustand
-2. Writes to **Supabase** with timestamp + version
-3. Supabase Realtime **broadcasts** to all connected clients
-4. Clients merge via **Last-Write-Wins** on `updated_at`
-5. Cursor positions use **Supabase Presence** (ephemeral, no DB writes)
+1. Client makes an **optimistic local update** via Zustand (instant, 0ms)
+2. **Broadcasts** to other clients via Supabase Realtime broadcast channel (<16ms)
+3. Writes to **Supabase DB** asynchronously (fire-and-forget, no UI blocking)
+4. Other clients receive via broadcast first, Postgres changes as fallback
+5. Clients merge via **Last-Write-Wins** on `updated_at` with version tiebreaker
+6. Cursor positions use **Supabase Presence** (ephemeral, no DB writes)
+
+#### Sync Optimizations
+
+- **Dual-channel architecture**: Separate channels for DB changes (`board:sync`) and live interactions (`board:live`) to avoid interference
+- **16ms broadcast throttle**: Cursor and object move broadcasts match 60fps refresh rate
+- **Lerp-interpolated cursors**: Remote cursors animate smoothly at 60fps via `requestAnimationFrame` instead of jumping between broadcast positions
+- **RAF-batched cursor updates**: Incoming cursor messages are coalesced per animation frame to prevent excessive re-renders
+- **Throttled text broadcasts**: Text input broadcasts are rate-limited to 50ms to prevent keystroke flooding
+- **Deep property merging**: Zustand store merges nested `properties` objects to avoid overwriting unrelated fields during partial updates
+- **Batch operations**: Group drag/resize sends a single `object_move_batch` broadcast; bulk deletes use a single DB query
 
 ### AI Agent
 
@@ -119,10 +130,11 @@ The AI endpoint is server-side only -- the Anthropic API key never reaches the c
 ### Canvas Performance
 
 Optimized for 500+ objects at 60 FPS:
-- Separate Konva layers (background, objects, UI)
+- Separate Konva layers (background, objects, UI, cursors)
 - Viewport culling with configurable padding
 - `shape.cache()` for static objects
-- `listening={false}` on non-interactive elements
+- `listening={false}` on non-interactive elements and cursor layers
+- Lerp-interpolated cursor rendering via dedicated RAF loop
 
 ### Performance Targets
 
@@ -132,8 +144,11 @@ All targets are validated by automated tests (unit + E2E):
 |---|---|---|
 | Frame rate | 60 FPS during pan/zoom/manipulation | `canvas-performance.spec.ts` (30 FPS CI threshold) |
 | Object sync latency | <100ms client-side processing | `sync-latency.spec.ts` |
-| Cursor sync latency | <50ms client-side processing | `sync-latency.spec.ts` |
+| Cursor sync latency | <16ms broadcast interval (60fps) | `sync-performance.test.ts` + `sync-latency.spec.ts` |
+| Cursor rendering | 60fps lerp interpolation | `CursorOverlay` RAF loop |
 | Object capacity | 500+ objects without degradation | `canvas-performance.test.ts` + `canvas-performance.spec.ts` |
+| Store throughput | 500 rapid updates in <100ms | `sync-performance.test.ts` |
+| LWW resolution | 10,000 checks in <10ms | `sync-performance.test.ts` |
 | Concurrent users | 5+ without degradation | `concurrent-users.spec.ts` |
 | AI response latency | <2s for single-step commands | `ai-latency.spec.ts` |
 | AI command breadth | 6+ distinct command types | `tools-breadth.test.ts` |
@@ -192,6 +207,7 @@ tests/
     board/
       board-objects-store.test.ts     # Zustand store CRUD
       canvas-performance.test.ts      # Viewport culling & store ops at 500+ objects
+      sync-performance.test.ts        # Sync throughput, throttle intervals, LWW perf, deep merge
       realtime-utils.test.ts          # Realtime sync utilities
     ai-agent/
       tools-schema.test.ts            # AI tool schema validation

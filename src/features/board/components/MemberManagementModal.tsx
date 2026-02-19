@@ -117,16 +117,17 @@ export function MemberManagementModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md rounded-xl bg-white shadow-2xl dark:bg-gray-900 dark:border dark:border-gray-700">
+    <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 sm:items-center">
+      <div className="w-full max-w-md rounded-t-[14px] bg-[var(--bg-grouped-secondary)] shadow-2xl hig-sheet-enter border border-[var(--separator)] sm:hig-rounded-xl">
+        <div className="hig-sheet-indicator sm:hidden" />
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+        <div className="flex items-center justify-between border-b border-[var(--separator)] px-4 py-3 sm:px-6 sm:py-4">
+          <h2 className="text-lg font-semibold text-[var(--label-primary)]">
             Manage Members
           </h2>
           <button
             onClick={onClose}
-            className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+            className="rounded-lg p-1 text-[var(--label-tertiary)] hover:bg-[var(--fill-quaternary)] hover:text-[var(--label-secondary)]"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -135,10 +136,10 @@ export function MemberManagementModal({
           </button>
         </div>
 
-        <div className="max-h-[70vh] overflow-y-auto px-6 py-4 space-y-6">
+        <div className="max-h-[60vh] overflow-y-auto px-4 py-3 space-y-4 sm:max-h-[70vh] sm:px-6 sm:py-4 sm:space-y-6">
           {/* Invite by email */}
           <div>
-            <h3 className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+            <h3 className="mb-2 text-sm font-medium text-[var(--label-secondary)]">
               Invite by email
             </h3>
             <div className="flex gap-2">
@@ -147,7 +148,7 @@ export function MemberManagementModal({
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
                 placeholder="user@example.com"
-                className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                className="flex-1 bg-[var(--fill-tertiary)] hig-rounded-md min-h-[44px] px-3 py-2 text-sm text-[var(--label-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--system-blue)]"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleInviteByEmail();
                 }}
@@ -155,16 +156,16 @@ export function MemberManagementModal({
               <button
                 onClick={handleInviteByEmail}
                 disabled={inviteLoading || !inviteEmail.trim()}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                className="bg-[var(--system-blue)] hig-rounded-md hig-pressable min-h-[44px] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
               >
                 {inviteLoading ? '...' : 'Invite'}
               </button>
             </div>
             {inviteError && (
-              <p className="mt-1 text-xs text-red-500">{inviteError}</p>
+              <p className="mt-1 text-xs text-[var(--system-red)]">{inviteError}</p>
             )}
             {inviteSuccess && (
-              <p className="mt-1 text-xs text-green-600 dark:text-green-400">
+              <p className="mt-1 text-xs text-[var(--system-green)]">
                 {inviteSuccess}
               </p>
             )}
@@ -172,33 +173,33 @@ export function MemberManagementModal({
 
           {/* Members list */}
           <div>
-            <h3 className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+            <h3 className="mb-2 text-sm font-medium text-[var(--label-secondary)]">
               Members ({members.length})
             </h3>
             {loading ? (
               <div className="flex justify-center py-4">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-[var(--system-blue)] border-t-transparent" />
               </div>
             ) : (
               <ul className="space-y-2">
                 {members.map((member) => (
                   <li
                     key={member.user_id}
-                    className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-gray-800"
+                    className="flex items-center justify-between hig-rounded-md bg-[var(--fill-quaternary)] px-3 py-2"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--system-blue)]/10 text-sm font-medium text-[var(--system-blue)]">
                         {member.email.charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0">
-                        <p className="truncate text-sm text-gray-900 dark:text-gray-100">
+                        <p className="truncate text-sm text-[var(--label-primary)]">
                           {member.email}
                         </p>
                         <span
                           className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${
                             member.role === 'owner'
-                              ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
-                              : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                              ? 'bg-[var(--system-orange)]/10 text-[var(--system-orange)]'
+                              : 'bg-[var(--fill-tertiary)] text-[var(--label-secondary)]'
                           }`}
                         >
                           {member.role}
@@ -208,7 +209,7 @@ export function MemberManagementModal({
                     {member.role !== 'owner' && (
                       <button
                         onClick={() => handleRemoveMember(member.user_id)}
-                        className="shrink-0 rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/30"
+                        className="shrink-0 rounded p-1 text-[var(--label-tertiary)] hover:bg-[var(--system-red)]/10 hover:text-[var(--system-red)]"
                         title="Remove member"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

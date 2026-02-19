@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { X } from 'lucide-react';
 import { useBoardObjects } from '../hooks/useBoardObjects';
 import { DEFAULT_STICKY_COLORS } from '@/lib/constants';
 import type { WhiteboardObject, ObjectProperties } from '../types';
@@ -35,8 +36,8 @@ function ColorSwatch({
       onClick={onClick}
       className={`h-6 w-6 rounded border-2 transition-all ${
         isActive
-          ? 'border-blue-500 scale-110'
-          : 'border-gray-200 hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-400'
+          ? 'border-[var(--system-blue)] ring-2 ring-[var(--system-blue)]/30'
+          : 'border-[var(--separator-opaque)] hover:border-gray-400'
       }`}
       style={{
         backgroundColor: isTransparent ? undefined : color,
@@ -146,6 +147,13 @@ export default function PropertiesPanel() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isNote, isText, isMixed, toggleBold, toggleItalic]);
 
+  // Mobile expanded state - collapse when selection changes
+  const [mobileExpanded, setMobileExpanded] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- collapse mobile panel when selection changes
+    setMobileExpanded(false);
+  }, [selectedIds]);
+
   if (!first) return null;
 
   const hasFill =
@@ -171,30 +179,26 @@ export default function PropertiesPanel() {
   const currentTextColor = first.properties.color || '#1a1a1a';
   const currentFontSize = first.properties.fontSize || 16;
 
-  return (
-    <div className="absolute right-4 top-1/2 -translate-y-1/2 z-10 w-52 rounded-xl bg-white shadow-lg border border-gray-200 p-3 flex flex-col gap-3 dark:bg-gray-900 dark:border-gray-700">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">
-          {isMixed
-            ? `${selectedObjects.length} objects`
-            : selectedObjects.length > 1
-              ? `${selectedObjects.length} ${objectType}s`
-              : objectType!.replace('_', ' ')}
-        </span>
-      </div>
+  const headerLabel = isMixed
+    ? `${selectedObjects.length} objects`
+    : selectedObjects.length > 1
+      ? `${selectedObjects.length} ${objectType}s`
+      : objectType!.replace('_', ' ');
+
+  const panelContent = (
+    <>
 
       {/* Frame title */}
       {isFrame && !isMixed && (
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block dark:text-gray-400">
+          <label className="hig-caption1 font-medium text-[var(--label-secondary)] mb-1 block">
             Title
           </label>
           <input
             type="text"
             value={first.properties.title || 'Frame'}
             onChange={(e) => updateProperties({ title: e.target.value })}
-            className="w-full rounded border border-gray-200 px-2 py-1 text-sm text-gray-700 outline-none focus:border-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+            className="w-full rounded border border-[var(--separator)] px-2 py-1 text-sm text-[var(--label-primary)] outline-none focus:border-[var(--system-blue)]"
           />
         </div>
       )}
@@ -202,7 +206,7 @@ export default function PropertiesPanel() {
       {/* Note color (sticky notes) */}
       {isNote && !isMixed && (
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block dark:text-gray-400">
+          <label className="hig-caption1 font-medium text-[var(--label-secondary)] mb-1 block">
             Note Color
           </label>
           <div className="flex flex-wrap gap-1.5">
@@ -221,7 +225,7 @@ export default function PropertiesPanel() {
       {/* Font size (sticky notes) */}
       {isNote && !isMixed && (
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block dark:text-gray-400">
+          <label className="hig-caption1 font-medium text-[var(--label-secondary)] mb-1 block">
             Font Size
           </label>
           <div className="flex items-center gap-2">
@@ -234,9 +238,9 @@ export default function PropertiesPanel() {
               onChange={(e) =>
                 updateProperties({ fontSize: Number(e.target.value) })
               }
-              className="flex-1 h-1.5 accent-blue-500 cursor-pointer"
+              className="flex-1 h-1.5 accent-[var(--system-blue)] cursor-pointer"
             />
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 w-6 text-right tabular-nums">
+            <span className="text-xs font-medium text-[var(--label-secondary)] w-6 text-right tabular-nums">
               {currentFontSize}
             </span>
           </div>
@@ -246,7 +250,7 @@ export default function PropertiesPanel() {
       {/* Font style (sticky notes) */}
       {isNote && !isMixed && (
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block dark:text-gray-400">
+          <label className="hig-caption1 font-medium text-[var(--label-secondary)] mb-1 block">
             Style
           </label>
           <div className="flex gap-1">
@@ -255,8 +259,8 @@ export default function PropertiesPanel() {
               title="Bold (Cmd+B)"
               className={`flex h-7 flex-1 items-center justify-center rounded text-xs font-bold transition-colors ${
                 isBold
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  ? 'bg-[var(--system-blue)] text-white'
+                  : 'bg-[var(--fill-tertiary)] text-[var(--label-secondary)] hover:bg-[var(--fill-secondary)]'
               }`}
             >
               B
@@ -266,8 +270,8 @@ export default function PropertiesPanel() {
               title="Italic (Cmd+I)"
               className={`flex h-7 flex-1 items-center justify-center rounded text-xs italic transition-colors ${
                 isItalic
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  ? 'bg-[var(--system-blue)] text-white'
+                  : 'bg-[var(--fill-tertiary)] text-[var(--label-secondary)] hover:bg-[var(--fill-secondary)]'
               }`}
             >
               I
@@ -279,7 +283,7 @@ export default function PropertiesPanel() {
       {/* Text color (standalone text) */}
       {isText && !isMixed && (
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block dark:text-gray-400">
+          <label className="hig-caption1 font-medium text-[var(--label-secondary)] mb-1 block">
             Text Color
           </label>
           <div className="flex flex-wrap gap-1.5">
@@ -297,9 +301,9 @@ export default function PropertiesPanel() {
               type="color"
               value={currentTextColor}
               onChange={(e) => updateProperties({ color: e.target.value })}
-              className="h-6 w-6 cursor-pointer rounded border border-gray-200 p-0 dark:border-gray-600"
+              className="h-6 w-6 cursor-pointer rounded border border-[var(--separator)] p-0"
             />
-            <span className="text-xs text-gray-400 dark:text-gray-500">Custom</span>
+            <span className="text-xs text-[var(--label-tertiary)]">Custom</span>
           </div>
         </div>
       )}
@@ -307,7 +311,7 @@ export default function PropertiesPanel() {
       {/* Font size (standalone text) */}
       {isText && !isMixed && (
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block dark:text-gray-400">
+          <label className="hig-caption1 font-medium text-[var(--label-secondary)] mb-1 block">
             Font Size
           </label>
           <div className="flex items-center gap-2">
@@ -320,9 +324,9 @@ export default function PropertiesPanel() {
               onChange={(e) =>
                 updateProperties({ fontSize: Number(e.target.value) })
               }
-              className="flex-1 h-1.5 accent-blue-500 cursor-pointer"
+              className="flex-1 h-1.5 accent-[var(--system-blue)] cursor-pointer"
             />
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 w-6 text-right tabular-nums">
+            <span className="text-xs font-medium text-[var(--label-secondary)] w-6 text-right tabular-nums">
               {currentFontSize}
             </span>
           </div>
@@ -332,7 +336,7 @@ export default function PropertiesPanel() {
       {/* Font style (standalone text) */}
       {isText && !isMixed && (
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block dark:text-gray-400">
+          <label className="hig-caption1 font-medium text-[var(--label-secondary)] mb-1 block">
             Style
           </label>
           <div className="flex gap-1">
@@ -341,8 +345,8 @@ export default function PropertiesPanel() {
               title="Bold (Cmd+B)"
               className={`flex h-7 flex-1 items-center justify-center rounded text-xs font-bold transition-colors ${
                 isBold
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  ? 'bg-[var(--system-blue)] text-white'
+                  : 'bg-[var(--fill-tertiary)] text-[var(--label-secondary)] hover:bg-[var(--fill-secondary)]'
               }`}
             >
               B
@@ -352,8 +356,8 @@ export default function PropertiesPanel() {
               title="Italic (Cmd+I)"
               className={`flex h-7 flex-1 items-center justify-center rounded text-xs italic transition-colors ${
                 isItalic
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  ? 'bg-[var(--system-blue)] text-white'
+                  : 'bg-[var(--fill-tertiary)] text-[var(--label-secondary)] hover:bg-[var(--fill-secondary)]'
               }`}
             >
               I
@@ -365,7 +369,7 @@ export default function PropertiesPanel() {
       {/* Fill color */}
       {(hasFill && !isNote && !isMixed) && (
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block dark:text-gray-400">
+          <label className="hig-caption1 font-medium text-[var(--label-secondary)] mb-1 block">
             Fill
           </label>
           <div className="flex flex-wrap gap-1.5">
@@ -385,9 +389,9 @@ export default function PropertiesPanel() {
                 currentFill === 'transparent' ? '#ffffff' : currentFill
               }
               onChange={(e) => updateProperties({ fill: e.target.value })}
-              className="h-6 w-6 cursor-pointer rounded border border-gray-200 p-0 dark:border-gray-600"
+              className="h-6 w-6 cursor-pointer rounded border border-[var(--separator)] p-0"
             />
-            <span className="text-xs text-gray-400 dark:text-gray-500">Custom</span>
+            <span className="text-xs text-[var(--label-tertiary)]">Custom</span>
           </div>
         </div>
       )}
@@ -395,7 +399,7 @@ export default function PropertiesPanel() {
       {/* Stroke color */}
       {(hasStroke && !isMixed) && (
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block dark:text-gray-400">
+          <label className="hig-caption1 font-medium text-[var(--label-secondary)] mb-1 block">
             Border Color
           </label>
           <div className="flex flex-wrap gap-1.5">
@@ -415,9 +419,9 @@ export default function PropertiesPanel() {
               onChange={(e) =>
                 updateProperties({ stroke: e.target.value })
               }
-              className="h-6 w-6 cursor-pointer rounded border border-gray-200 p-0 dark:border-gray-600"
+              className="h-6 w-6 cursor-pointer rounded border border-[var(--separator)] p-0"
             />
-            <span className="text-xs text-gray-400 dark:text-gray-500">Custom</span>
+            <span className="text-xs text-[var(--label-tertiary)]">Custom</span>
           </div>
         </div>
       )}
@@ -425,7 +429,7 @@ export default function PropertiesPanel() {
       {/* Stroke width */}
       {hasStrokeWidth && !isMixed && (
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block dark:text-gray-400">
+          <label className="hig-caption1 font-medium text-[var(--label-secondary)] mb-1 block">
             Border Width
           </label>
           <div className="flex gap-1">
@@ -435,8 +439,8 @@ export default function PropertiesPanel() {
                 onClick={() => updateProperties({ strokeWidth: w })}
                 className={`flex h-7 w-7 items-center justify-center rounded text-xs font-medium transition-colors ${
                   currentStrokeWidth === w
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700'
+                    ? 'bg-[var(--system-blue)] text-white'
+                    : 'bg-[var(--fill-tertiary)] text-[var(--label-secondary)] hover:bg-[var(--fill-secondary)]'
                 }`}
               >
                 {w}
@@ -449,7 +453,7 @@ export default function PropertiesPanel() {
       {/* Border style */}
       {hasStrokeStyle && !isMixed && (
         <div>
-          <label className="text-xs font-medium text-gray-600 mb-1 block dark:text-gray-400">
+          <label className="hig-caption1 font-medium text-[var(--label-secondary)] mb-1 block">
             {hasLineStyle ? 'Line Style' : 'Border Style'}
           </label>
           <div className="flex gap-1">
@@ -465,8 +469,8 @@ export default function PropertiesPanel() {
                 onClick={() => updateProperties({ lineStyle: style })}
                 className={`flex h-7 flex-1 items-center justify-center rounded text-xs transition-colors ${
                   currentLineStyle === style
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700'
+                    ? 'bg-[var(--system-blue)] text-white'
+                    : 'bg-[var(--fill-tertiary)] text-[var(--label-secondary)] hover:bg-[var(--fill-secondary)]'
                 }`}
               >
                 {style === 'solid' && (
@@ -533,7 +537,7 @@ export default function PropertiesPanel() {
       {isMixed && (
         <>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block dark:text-gray-400">
+            <label className="hig-caption1 font-medium text-[var(--label-secondary)] mb-1 block">
               Fill
             </label>
             <div className="flex flex-wrap gap-1.5">
@@ -548,7 +552,7 @@ export default function PropertiesPanel() {
             </div>
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block dark:text-gray-400">
+            <label className="hig-caption1 font-medium text-[var(--label-secondary)] mb-1 block">
               Border Color
             </label>
             <div className="flex flex-wrap gap-1.5">
@@ -563,7 +567,7 @@ export default function PropertiesPanel() {
             </div>
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block dark:text-gray-400">
+            <label className="hig-caption1 font-medium text-[var(--label-secondary)] mb-1 block">
               Border Width
             </label>
             <div className="flex gap-1">
@@ -571,7 +575,7 @@ export default function PropertiesPanel() {
                 <button
                   key={w}
                   onClick={() => updateProperties({ strokeWidth: w })}
-                  className="flex h-7 w-7 items-center justify-center rounded text-xs font-medium transition-colors bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                  className="flex h-7 w-7 items-center justify-center rounded text-xs font-medium transition-colors bg-[var(--fill-tertiary)] text-[var(--label-secondary)] hover:bg-[var(--fill-secondary)]"
                 >
                   {w}
                 </button>
@@ -580,6 +584,55 @@ export default function PropertiesPanel() {
           </div>
         </>
       )}
-    </div>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile: collapsed pill + expandable bottom sheet */}
+      <div className="md:hidden">
+        {!mobileExpanded && (
+          <button
+            onClick={() => setMobileExpanded(true)}
+            className="fixed bottom-16 right-3 z-10 flex items-center gap-1.5 hig-rounded-md hig-material-regular border border-[var(--separator)] px-3 py-2 text-xs font-medium text-[var(--label-secondary)] hig-pressable"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="13.5" cy="6.5" r="2.5" />
+              <circle cx="17.5" cy="15.5" r="2.5" />
+              <circle cx="8.5" cy="15.5" r="2.5" />
+            </svg>
+            {headerLabel}
+          </button>
+        )}
+        {mobileExpanded && (
+          <div className="fixed inset-x-0 bottom-0 z-20 max-h-[60vh] overflow-y-auto rounded-t-[14px] bg-[var(--bg-grouped-secondary)] p-4 border-t border-[var(--separator)] hig-sheet-enter">
+            <div className="hig-sheet-indicator" />
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-xs font-semibold text-[var(--label-secondary)] uppercase tracking-wider">
+                {headerLabel}
+              </span>
+              <button
+                onClick={() => setMobileExpanded(false)}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--label-tertiary)] hover:bg-[var(--fill-quaternary)]"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex flex-col gap-3">
+              {panelContent}
+            </div>
+          </div>
+        )}
+      </div>
+      {/* Desktop: right-side panel */}
+      <div className="absolute right-4 top-1/2 -translate-y-1/2 z-10 hidden w-52 flex-col gap-3 hig-rounded-xl hig-material-regular border border-[var(--separator)] p-3 md:flex">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-[var(--label-secondary)] uppercase tracking-wider">
+            {headerLabel}
+          </span>
+        </div>
+        {panelContent}
+      </div>
+    </>
   );
 }

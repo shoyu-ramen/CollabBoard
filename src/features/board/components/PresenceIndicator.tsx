@@ -8,12 +8,23 @@ interface PresenceIndicatorProps {
 
 export function PresenceIndicator({ users }: PresenceIndicatorProps) {
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 shadow-md dark:bg-gray-900 dark:border dark:border-gray-700">
+    <div className="flex items-center gap-1.5 hig-rounded-lg hig-material-regular px-2 py-1.5 border border-[var(--separator)] sm:gap-2 sm:px-3 sm:py-2">
       <div className="flex -space-x-2">
-        {users.slice(0, 5).map((user) => (
+        {users.slice(0, 3).map((user) => (
           <div
             key={user.userId}
-            className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white text-xs font-medium text-white dark:border-gray-900"
+            className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-[var(--bg-primary)] text-[10px] font-medium text-white sm:h-8 sm:w-8 sm:text-xs"
+            style={{ backgroundColor: user.color }}
+            title={user.userName}
+          >
+            {user.userName.charAt(0).toUpperCase()}
+          </div>
+        ))}
+        {/* Show more avatars on desktop */}
+        {users.slice(3, 5).map((user) => (
+          <div
+            key={user.userId}
+            className="hidden h-8 w-8 items-center justify-center rounded-full border-2 border-[var(--bg-primary)] text-xs font-medium text-white sm:flex"
             style={{ backgroundColor: user.color }}
             title={user.userName}
           >
@@ -21,13 +32,18 @@ export function PresenceIndicator({ users }: PresenceIndicatorProps) {
           </div>
         ))}
         {users.length > 5 && (
-          <div className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-gray-400 text-xs font-medium text-white">
+          <div className="hidden h-8 w-8 items-center justify-center rounded-full border-2 border-[var(--bg-primary)] bg-[var(--fill-secondary)] text-xs font-medium text-[var(--label-secondary)] sm:flex">
             +{users.length - 5}
           </div>
         )}
+        {users.length > 3 && (
+          <div className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-[var(--bg-primary)] bg-[var(--fill-secondary)] text-[10px] font-medium text-[var(--label-secondary)] sm:hidden">
+            +{users.length - 3}
+          </div>
+        )}
       </div>
-      <span className="text-sm text-gray-600 dark:text-gray-400">
-        {users.length} online
+      <span className="hig-caption1 text-[var(--label-secondary)]">
+        {users.length}
       </span>
     </div>
   );

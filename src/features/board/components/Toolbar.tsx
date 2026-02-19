@@ -82,23 +82,23 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <div
-        className="w-80 rounded-xl bg-white shadow-2xl border border-gray-200 p-5 dark:bg-gray-900 dark:border-gray-700"
+        className="w-[calc(100vw-2rem)] max-w-80 hig-rounded-xl bg-[var(--bg-grouped-secondary)] shadow-2xl border border-[var(--separator)] p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+          <h2 className="text-sm font-semibold text-[var(--label-primary)]">
             Shortcuts
           </h2>
           <button
             onClick={onClose}
-            className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors dark:hover:text-gray-300 dark:hover:bg-gray-800"
+            className="flex h-6 w-6 items-center justify-center rounded text-[var(--label-tertiary)] hover:text-[var(--label-secondary)] hover:bg-[var(--fill-quaternary)] transition-colors"
           >
             <X size={14} />
           </button>
         </div>
         {shortcutGroups.map((group) => (
           <div key={group.title} className="mb-3 last:mb-0">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5 dark:text-gray-400">
+            <h3 className="text-xs font-semibold text-[var(--label-secondary)] uppercase tracking-wider mb-1.5">
               {group.title}
             </h3>
             <div className="flex flex-col gap-1">
@@ -107,14 +107,14 @@ function ShortcutsModal({ onClose }: { onClose: () => void }) {
                   key={s.description}
                   className="flex items-center justify-between py-1"
                 >
-                  <span className="text-xs text-gray-600 dark:text-gray-400">
+                  <span className="text-xs text-[var(--label-secondary)]">
                     {s.description}
                   </span>
                   <div className="flex items-center gap-0.5">
                     {s.keys.map((k) => (
                       <kbd
                         key={k}
-                        className="inline-block min-w-[1.5rem] rounded bg-gray-100 border border-gray-200 px-1.5 py-0.5 text-center text-[10px] font-medium text-gray-500 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-400"
+                        className="inline-block min-w-[1.5rem] rounded bg-[var(--fill-tertiary)] border border-[var(--separator)] px-1.5 py-0.5 text-center text-[10px] font-medium text-[var(--label-secondary)]"
                       >
                         {k}
                       </kbd>
@@ -139,7 +139,25 @@ export default function Toolbar() {
 
   return (
     <>
-      <div className="absolute left-4 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-1 rounded-xl bg-white shadow-lg border border-gray-200 p-2 dark:bg-gray-900 dark:border-gray-700">
+      {/* Mobile: horizontal bottom bar */}
+      <div className="fixed bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-0.5 hig-rounded-2xl hig-material-chrome border border-[var(--separator)] safe-area-bottom p-1.5 md:hidden">
+        {tools.map((tool) => (
+          <button
+            key={tool.type}
+            title={tool.label}
+            onClick={() => setActiveTool(tool.type)}
+            className={`flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-sm font-bold transition-colors ${
+              activeTool === tool.type
+                ? 'bg-[var(--system-blue)] text-white'
+                : 'text-[var(--label-secondary)] hig-pressable hover:bg-[var(--fill-quaternary)]'
+            }`}
+          >
+            <tool.icon size={18} strokeWidth={2} />
+          </button>
+        ))}
+      </div>
+      {/* Desktop: vertical left bar */}
+      <div className="absolute left-4 top-1/2 -translate-y-1/2 z-10 hidden flex-col gap-1 hig-rounded-xl hig-material-regular border border-[var(--separator)] p-2 md:flex">
         {tools.map((tool) => (
           <button
             key={tool.type}
@@ -147,18 +165,18 @@ export default function Toolbar() {
             onClick={() => setActiveTool(tool.type)}
             className={`flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold transition-colors ${
               activeTool === tool.type
-                ? 'bg-blue-500 text-white'
-                : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
+                ? 'bg-[var(--system-blue)] text-white'
+                : 'text-[var(--label-secondary)] hig-pressable hover:bg-[var(--fill-quaternary)]'
             }`}
           >
             <tool.icon size={20} strokeWidth={2} />
           </button>
         ))}
-        <div className="hidden md:block border-t border-gray-200 my-1 dark:border-gray-700" />
+        <div className="border-t border-[var(--separator)] my-1" />
         <button
           title="Shortcuts"
           onClick={() => setShowShortcuts(true)}
-          className="hidden md:flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold transition-colors text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+          className="flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold transition-colors text-[var(--label-secondary)] hig-pressable hover:bg-[var(--fill-quaternary)]"
         >
           <Keyboard size={20} strokeWidth={2} />
         </button>

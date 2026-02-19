@@ -9,10 +9,10 @@ export default function LoginPage() {
   return (
     <>
       <div className="mb-6 text-center">
-        <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">
+        <h1 className="text-xl font-semibold text-[var(--label-primary)]">
           Sign in to CollabBoard
         </h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="mt-1 text-sm text-[var(--label-secondary)]">
           Welcome back! Sign in to continue.
         </p>
       </div>

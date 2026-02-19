@@ -59,6 +59,7 @@ export const useBoardObjects = create<BoardObjectsState>((set, get) => ({
 
   addObject: (obj) =>
     set((state) => {
+      // Shallow-clone Map for immutability (Zustand requires new reference)
       const next = new Map(state.objects);
       next.set(obj.id, obj);
       return { objects: next };
@@ -68,18 +69,29 @@ export const useBoardObjects = create<BoardObjectsState>((set, get) => ({
     set((state) => {
       const existing = state.objects.get(id);
       if (!existing) return state;
+      // Merge and create new Map reference for Zustand reactivity
+      const merged = { ...existing, ...updates };
+      // Fast-path: avoid deep properties merge when properties unchanged
+      if (updates.properties && existing.properties) {
+        merged.properties = { ...existing.properties, ...updates.properties };
+      }
       const next = new Map(state.objects);
-      next.set(id, { ...existing, ...updates });
+      next.set(id, merged);
       return { objects: next };
     }),
 
   batchUpdateObjects: (updates) =>
     set((state) => {
+      if (updates.length === 0) return state;
       const next = new Map(state.objects);
       for (const { id, updates: u } of updates) {
         const existing = next.get(id);
         if (existing) {
-          next.set(id, { ...existing, ...u });
+          const merged = { ...existing, ...u };
+          if (u.properties && existing.properties) {
+            merged.properties = { ...existing.properties, ...u.properties };
+          }
+          next.set(id, merged);
         }
       }
       return { objects: next };
@@ -87,6 +99,7 @@ export const useBoardObjects = create<BoardObjectsState>((set, get) => ({
 
   deleteObject: (id) =>
     set((state) => {
+      if (!state.objects.has(id)) return state;
       const next = new Map(state.objects);
       next.delete(id);
       const nextSelected = new Set(state.selectedIds);
@@ -189,6 +202,7 @@ export const useBoardObjects = create<BoardObjectsState>((set, get) => ({
 
   deleteSelectedSync: () => {
     const selected = [...get().selectedIds];
+    if (selected.length === 0) return;
     const senderId = get().userId;
 
     set((state) => {
@@ -199,17 +213,20 @@ export const useBoardObjects = create<BoardObjectsState>((set, get) => ({
       return { objects: next, selectedIds: new Set() };
     });
 
-    const supabase = createClient();
+    // Broadcast all deletes
     for (const id of selected) {
       broadcastToLiveChannel('object_delete', { id, senderId });
-      supabase
-        .from('whiteboard_objects')
-        .delete()
-        .eq('id', id)
-        .then(({ error }) => {
-          if (error) console.error('Failed to persist delete:', error);
-        });
     }
+
+    // Single batch DB delete instead of N individual requests
+    const supabase = createClient();
+    supabase
+      .from('whiteboard_objects')
+      .delete()
+      .in('id', selected)
+      .then(({ error }) => {
+        if (error) console.error('Failed to persist batch delete:', error);
+      });
   },
 
   selectObject: (id, multi = false) =>

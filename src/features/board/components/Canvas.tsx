@@ -28,6 +28,7 @@ import {
   DEFAULT_LINE_COLOR,
   DEFAULT_LINE_WIDTH,
   OBJECT_SYNC_THROTTLE_MS,
+  TEXT_BROADCAST_THROTTLE_MS,
 } from '@/lib/constants';
 
 import StickyNote from './shapes/StickyNote';
@@ -1123,6 +1124,8 @@ export default function Canvas({
 
   // Throttle ref for live object move broadcasts
   const lastMoveRef = useRef<number>(0);
+  // Throttle ref for text input broadcasts
+  const lastTextBroadcastRef = useRef<number>(0);
 
   // Handle drag of shapes
   const handleDragEnd = useCallback(
@@ -1870,9 +1873,13 @@ export default function Canvas({
     [updateObject]
   );
 
-  // Broadcast text as user types (no DB write)
+  // Broadcast text as user types (no DB write, throttled)
   const handleTextInput = useCallback(
     (id: string, text: string) => {
+      const now = Date.now();
+      if (now - lastTextBroadcastRef.current < TEXT_BROADCAST_THROTTLE_MS) return;
+      lastTextBroadcastRef.current = now;
+
       const obj = useBoardObjects.getState().objects.get(id);
       if (!obj) return;
 

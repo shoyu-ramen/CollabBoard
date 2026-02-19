@@ -1,14 +1,8 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
 import { BoardPresenceProvider } from '@/features/board/contexts/BoardPresenceProvider';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import './globals.css';
-
-const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-inter',
-});
 
 export const metadata: Metadata = {
   title: 'CollabBoard',
@@ -26,10 +20,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+      </head>
+      <body className="font-sans antialiased">
         <ThemeProvider>
           <BoardPresenceProvider>{children}</BoardPresenceProvider>
-          <div className="fixed bottom-4 left-4 z-50">
+          <div className="fixed bottom-16 left-3 z-50 sm:bottom-4 sm:left-4">
             <ThemeToggle />
           </div>
         </ThemeProvider>

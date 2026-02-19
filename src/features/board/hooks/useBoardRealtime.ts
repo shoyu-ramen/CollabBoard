@@ -115,6 +115,11 @@ export function useBoardRealtime({
   const subscribedRef = useRef(false);
   const lastBroadcastRef = useRef<number>(0);
 
+  // RAF-batched cursor updates: accumulate incoming cursor messages and
+  // flush them into state once per animation frame to avoid excessive re-renders.
+  const pendingCursorsRef = useRef<Map<string, CursorPosition>>(new Map());
+  const cursorRafRef = useRef<number>(0);
+
   // Channel 1: Postgres changes for object sync (separate channel to avoid
   // interference with broadcast/presence)
   useEffect(() => {
@@ -227,6 +232,10 @@ export function useBoardRealtime({
       config: { presence: { key: userId } },
     });
 
+    // Capture refs for cleanup (avoids stale ref.current in cleanup closure)
+    const pendingCursors = pendingCursorsRef.current;
+    const cursorRaf = cursorRafRef.current;
+
     // Ensure presence is cleaned up when the browser tab closes (React
     // cleanup effects don't reliably run on tab close, which leaves stale
     // presence entries on the server until the heartbeat timeout expires).
@@ -235,15 +244,32 @@ export function useBoardRealtime({
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
 
-    // --- Cursor broadcast ---
+    // --- Cursor broadcast (RAF-batched) ---
+    // Instead of calling setRemoteCursors on every message, we accumulate
+    // updates and flush once per animation frame. This avoids excessive
+    // React re-renders when many cursors are moving simultaneously.
     liveChannel.on('broadcast', { event: 'cursor' }, ({ payload }) => {
       const cursor = payload as CursorPosition;
       if (cursor.userId === userId) return;
-      setRemoteCursors((prev) => {
-        const next = new Map(prev);
-        next.set(cursor.userId, cursor);
-        return next;
-      });
+      pendingCursorsRef.current.set(cursor.userId, cursor);
+
+      if (!cursorRafRef.current) {
+        cursorRafRef.current = requestAnimationFrame(() => {
+          cursorRafRef.current = 0;
+          const batch = pendingCursorsRef.current;
+          if (batch.size === 0) return;
+          // Snapshot and clear
+          const updates = new Map(batch);
+          batch.clear();
+          setRemoteCursors((prev) => {
+            const next = new Map(prev);
+            for (const [id, c] of updates) {
+              next.set(id, c);
+            }
+            return next;
+          });
+        });
+      }
     });
 
     // --- Object mutation broadcasts ---
@@ -434,6 +460,10 @@ export function useBoardRealtime({
       liveChannelRef.current = null;
       _broadcastFn = null;
       _pendingBroadcasts = [];
+      if (cursorRaf) {
+        cancelAnimationFrame(cursorRaf);
+      }
+      pendingCursors.clear();
       // Explicitly untrack presence before removing the channel so the
       // server drops our entry immediately instead of waiting for the
       // heartbeat timeout. This prevents stale "ghost" users.

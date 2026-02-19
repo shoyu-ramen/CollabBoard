@@ -144,10 +144,10 @@ export default function BoardPage({
 
   if (loading) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-gray-50 dark:bg-gray-950">
+      <div className="flex h-screen w-screen items-center justify-center bg-[var(--bg-primary)]">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
-          <p className="text-sm text-gray-500 dark:text-gray-400">Loading board...</p>
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-[var(--system-blue)] border-t-transparent" />
+          <p className="text-sm text-[var(--label-secondary)]">Loading board...</p>
         </div>
       </div>
     );
@@ -157,42 +157,42 @@ export default function BoardPage({
     const isAccessDenied = error.includes('Access denied') || error.includes('private');
     const isNotFound = error.includes('not found');
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-gray-50 dark:bg-gray-950">
+      <div className="flex h-screen w-screen items-center justify-center bg-[var(--bg-primary)]">
         <div className="flex flex-col items-center gap-3 text-center">
           {isAccessDenied ? (
             <>
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-600 dark:text-red-400">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--system-red)]/10">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--system-red)]">
                   <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                   <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                 </svg>
               </div>
-              <p className="text-lg font-medium text-red-600 dark:text-red-400">
+              <p className="text-lg font-medium text-[var(--system-red)]">
                 Access Denied
               </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <p className="text-sm text-[var(--label-secondary)]">
                 This board is private. Ask the owner to invite you.
               </p>
             </>
           ) : (
             <>
-              <p className="text-lg font-medium text-red-600 dark:text-red-400">
+              <p className="text-lg font-medium text-[var(--system-red)]">
                 {isNotFound ? 'Board Not Found' : 'Failed to load board'}
               </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{error}</p>
+              <p className="text-sm text-[var(--label-secondary)]">{error}</p>
             </>
           )}
           <div className="mt-2 flex gap-2">
             <Link
               href="/dashboard"
-              className="rounded-lg bg-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-300 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              className="bg-[var(--fill-tertiary)] text-[var(--label-primary)] hig-rounded-md hig-pressable px-4 py-2 text-sm hover:opacity-80"
             >
               Back to Dashboard
             </Link>
             {!isAccessDenied && (
               <button
                 onClick={reload}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+                className="bg-[var(--system-blue)] hig-rounded-md hig-pressable px-4 py-2 text-sm text-white"
               >
                 Retry
               </button>
@@ -221,7 +221,7 @@ export default function BoardPage({
       <FloatingActionBar />
       <Link
         href="/dashboard"
-        className="absolute top-4 left-4 z-50 flex h-10 w-10 items-center justify-center rounded-lg bg-white shadow-md border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors dark:bg-gray-900 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
+        className="absolute top-2 left-2 z-50 flex items-center justify-center hig-material-regular hig-rounded-md min-h-[44px] min-w-[44px] border border-[var(--separator)] text-[var(--label-secondary)] hover:opacity-80 transition-colors sm:top-4 sm:left-4 h-9 w-9 sm:h-10 sm:w-10"
         title="Back to dashboard"
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -230,14 +230,14 @@ export default function BoardPage({
       </Link>
       <Toolbar />
       <PropertiesPanel />
-      <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
+      <div className="absolute top-2 right-2 z-50 flex items-center gap-1.5 sm:top-4 sm:right-4 sm:gap-2">
         {isBoardOwner && boardVisibility === 'private' && (
           <button
             onClick={() => setMembersOpen(true)}
-            className="flex h-10 w-10 items-center justify-center rounded-lg bg-white shadow-md border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors dark:bg-gray-900 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
+            className="flex items-center justify-center hig-material-regular hig-rounded-md min-h-[44px] min-w-[44px] border border-[var(--separator)] text-[var(--label-secondary)] hover:opacity-80 transition-colors h-9 w-9 sm:h-10 sm:w-10"
             title="Manage members"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="sm:h-5 sm:w-5">
               <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
               <circle cx="9" cy="7" r="4" />
               <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
@@ -264,12 +264,12 @@ export default function BoardPage({
       <AIChatPanel boardId={boardId} isOpen={aiPanelOpen} onClose={() => setAiPanelOpen(false)} />
       {/* Connection status banner */}
       {(connectionStatus === 'disconnected' || connectionStatus === 'reconnecting') && !loading && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 shadow-md dark:bg-amber-950 dark:border-amber-800">
-          <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-          <span className="text-sm text-amber-700 dark:text-amber-300">
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 hig-material-regular hig-rounded-md border border-[var(--separator)] px-3 py-1.5 shadow-md sm:top-4 sm:px-4 sm:py-2">
+          <div className="h-2 w-2 shrink-0 rounded-full bg-[var(--system-orange)] animate-pulse" />
+          <span className="text-xs text-[var(--system-orange)] sm:text-sm">
             {connectionStatus === 'reconnecting'
               ? 'Reconnecting...'
-              : 'Connection lost, reconnecting...'}
+              : 'Connection lost'}
           </span>
         </div>
       )}

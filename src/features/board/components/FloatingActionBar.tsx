@@ -59,7 +59,10 @@ export function FloatingActionBar() {
   const barWidth = 100; // approximate width of bar
   const aboveTop = screenTop - BAR_OFFSET_Y - 44;
   const placeAbove = aboveTop > 8;
-  const top = placeAbove ? aboveTop : screenBottom + BAR_OFFSET_Y;
+  // Cap vertical position to avoid overlapping with the bottom toolbar (≈56px from bottom)
+  const maxTop = window.innerHeight - 64;
+  const rawTop = placeAbove ? aboveTop : screenBottom + BAR_OFFSET_Y;
+  const top = Math.min(rawTop, maxTop);
   const left = Math.max(8, Math.min(centerX - barWidth / 2, window.innerWidth - barWidth - 8));
 
   const handleDuplicate = () => {
@@ -88,21 +91,21 @@ export function FloatingActionBar() {
 
   return (
     <div
-      className="absolute z-30 flex md:hidden items-center gap-1 rounded-lg bg-white px-2 py-1 shadow-lg border border-gray-200 dark:bg-gray-900 dark:border-gray-700"
+      className="absolute z-30 flex md:hidden items-center gap-1 hig-rounded-lg hig-material-regular px-2 py-1 shadow-lg border border-[var(--separator)]"
       style={{ top, left }}
       onMouseDown={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
     >
       <button
         onClick={handleDuplicate}
-        className="flex h-11 w-11 items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+        className="flex h-11 w-11 items-center justify-center rounded-md text-[var(--label-secondary)] hig-pressable hover:bg-[var(--fill-quaternary)]"
         title="Duplicate"
       >
         <Copy size={18} />
       </button>
       <button
         onClick={deleteSelectedSync}
-        className="flex h-11 w-11 items-center justify-center rounded-md text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
+        className="flex h-11 w-11 items-center justify-center rounded-md text-[var(--system-red)] hig-pressable hover:bg-[var(--system-red)]/10"
         title="Delete"
       >
         <Trash2 size={18} />
