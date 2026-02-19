@@ -657,6 +657,55 @@ async function executeToolInner(
       };
     }
 
+    case 'createTemplate': {
+      const templateType = (input.type as string) || '';
+      const baseX = (input.x as number) ?? 100;
+      const baseY = (input.y as number) ?? 100;
+      const customTitle = input.title as string | undefined;
+
+      const templates = buildTemplate(
+        templateType,
+        baseX,
+        baseY,
+        customTitle
+      );
+      if (!templates) {
+        return {
+          toolName,
+          input,
+          result: `Unknown template type: "${templateType}". Supported types: swot, kanban, retrospective, pros_cons, eisenhower.`,
+        };
+      }
+
+      const createdIds: string[] = [];
+      for (const item of templates) {
+        const { id, error } = await insertObject(
+          boardId,
+          item.objectType,
+          item.x,
+          item.y,
+          item.width,
+          item.height,
+          item.properties,
+          userId
+        );
+        if (error) {
+          return {
+            toolName,
+            input,
+            result: `Error creating template: ${error}. Created ${createdIds.length} objects before failure.`,
+          };
+        }
+        createdIds.push(id);
+      }
+
+      return {
+        toolName,
+        input,
+        result: `Created ${templateType} template "${customTitle || templateType.toUpperCase()}" with ${createdIds.length} objects at (${baseX}, ${baseY}).`,
+      };
+    }
+
     case 'getBoardState': {
       const { data, error } = await supabase
         .from('whiteboard_objects')
@@ -699,5 +748,283 @@ async function executeToolInner(
         input,
         result: `Unknown tool: ${toolName}`,
       };
+  }
+}
+
+// --- Template builder ---
+
+interface TemplateItem {
+  objectType: ObjectType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  properties: Record<string, unknown>;
+}
+
+interface TemplateSection {
+  label: string;
+  color: string;
+  notes: string[];
+}
+
+const NOTE_W = DEFAULT_STICKY_WIDTH;
+const NOTE_H = DEFAULT_STICKY_HEIGHT;
+const NOTE_GAP = 20;
+const NOTE_STEP = NOTE_W + NOTE_GAP; // 220
+const SECTION_GAP = 40;
+// Frame title renders at y=-20 above the frame border
+const FRAME_TITLE_SPACE = 28;
+const PADDING = 20;
+
+function buildGridTemplate(
+  title: string,
+  sections: TemplateSection[],
+  cols: number,
+  notesPerRow: number,
+  baseX: number,
+  baseY: number
+): TemplateItem[] {
+  const items: TemplateItem[] = [];
+  const rows = Math.ceil(sections.length / cols);
+
+  // Sub-frame dimensions (just enough for sticky notes + padding)
+  const sectionW = notesPerRow * NOTE_STEP - NOTE_GAP + PADDING * 2;
+  const maxNoteRows = Math.max(
+    ...sections.map((s) => Math.ceil(s.notes.length / notesPerRow))
+  );
+  const sectionH = maxNoteRows * NOTE_STEP - NOTE_GAP + PADDING * 2;
+
+  // Outer frame: must contain all sub-frames + their titles above
+  const outerW =
+    cols * sectionW + (cols - 1) * SECTION_GAP + PADDING * 2;
+  const outerH =
+    PADDING +
+    rows * (FRAME_TITLE_SPACE + sectionH) +
+    (rows - 1) * SECTION_GAP +
+    PADDING;
+
+  items.push({
+    objectType: 'frame',
+    x: baseX,
+    y: baseY,
+    width: outerW,
+    height: outerH,
+    properties: { title, stroke: '#94A3B8', strokeWidth: 2 },
+  });
+
+  sections.forEach((section, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+
+    // Sub-frame position — leave FRAME_TITLE_SPACE above each for title
+    const sx = baseX + PADDING + col * (sectionW + SECTION_GAP);
+    const sy =
+      baseY +
+      PADDING +
+      FRAME_TITLE_SPACE +
+      row * (FRAME_TITLE_SPACE + sectionH + SECTION_GAP);
+
+    // Sub-frame (title renders automatically at y-20 above the border)
+    items.push({
+      objectType: 'frame',
+      x: sx,
+      y: sy,
+      width: sectionW,
+      height: sectionH,
+      properties: {
+        title: section.label,
+        stroke: '#94A3B8',
+        strokeWidth: 1,
+      },
+    });
+
+    // Sticky notes inside sub-frame
+    section.notes.forEach((noteText, ni) => {
+      const nc = ni % notesPerRow;
+      const nr = Math.floor(ni / notesPerRow);
+      const nx = sx + PADDING + nc * NOTE_STEP;
+      const ny = sy + PADDING + nr * NOTE_STEP;
+
+      items.push({
+        objectType: 'sticky_note',
+        x: nx,
+        y: ny,
+        width: NOTE_W,
+        height: NOTE_H,
+        properties: {
+          text: noteText,
+          noteColor: section.color,
+          fill: section.color,
+        },
+      });
+    });
+  });
+
+  return items;
+}
+
+function buildTemplate(
+  type: string,
+  baseX: number,
+  baseY: number,
+  customTitle?: string
+): TemplateItem[] | null {
+  switch (type.toLowerCase().replace(/[\s_-]/g, '')) {
+    case 'swot':
+    case 'swotanalysis':
+      return buildGridTemplate(
+        customTitle || 'SWOT Analysis',
+        [
+          {
+            label: '\ud83d\udcaa Strengths',
+            color: '#BBF7D0',
+            notes: [
+              'What do we do well?',
+              'What unique resources do we have?',
+            ],
+          },
+          {
+            label: '\u26a0\ufe0f Weaknesses',
+            color: '#FBCFE8',
+            notes: [
+              'What could we improve?',
+              'Where do we lack resources?',
+            ],
+          },
+          {
+            label: '\ud83d\ude80 Opportunities',
+            color: '#BFDBFE',
+            notes: [
+              'What trends can we leverage?',
+              'What market gaps exist?',
+            ],
+          },
+          {
+            label: '\ud83d\udea8 Threats',
+            color: '#FED7AA',
+            notes: [
+              'Who are our competitors?',
+              'What external risks do we face?',
+            ],
+          },
+        ],
+        2,
+        2,
+        baseX,
+        baseY
+      );
+
+    case 'kanban':
+    case 'kanbanboard':
+      return buildGridTemplate(
+        customTitle || 'Kanban Board',
+        [
+          {
+            label: '\ud83d\udccb To Do',
+            color: '#BFDBFE',
+            notes: ['Task 1', 'Task 2', 'Task 3'],
+          },
+          {
+            label: '\ud83d\udd27 In Progress',
+            color: '#FEF08A',
+            notes: ['Task 4'],
+          },
+          {
+            label: '\u2705 Done',
+            color: '#BBF7D0',
+            notes: ['Task 5'],
+          },
+        ],
+        3,
+        1,
+        baseX,
+        baseY
+      );
+
+    case 'retro':
+    case 'retrospective':
+      return buildGridTemplate(
+        customTitle || 'Retrospective',
+        [
+          {
+            label: '\ud83d\ude0a What went well',
+            color: '#BBF7D0',
+            notes: ['Add your thoughts...', 'Add your thoughts...'],
+          },
+          {
+            label: '\ud83e\udd14 What to improve',
+            color: '#FBCFE8',
+            notes: ['Add your thoughts...', 'Add your thoughts...'],
+          },
+          {
+            label: '\ud83d\udca1 Action items',
+            color: '#BFDBFE',
+            notes: ['Add your action...', 'Add your action...'],
+          },
+        ],
+        3,
+        1,
+        baseX,
+        baseY
+      );
+
+    case 'proscons':
+    case 'prosandcons':
+      return buildGridTemplate(
+        customTitle || 'Pros & Cons',
+        [
+          {
+            label: '\ud83d\udc4d Pros',
+            color: '#BBF7D0',
+            notes: ['Pro 1', 'Pro 2', 'Pro 3'],
+          },
+          {
+            label: '\ud83d\udc4e Cons',
+            color: '#FBCFE8',
+            notes: ['Con 1', 'Con 2', 'Con 3'],
+          },
+        ],
+        2,
+        1,
+        baseX,
+        baseY
+      );
+
+    case 'eisenhower':
+    case 'eisenhowermatrix':
+    case 'urgentimportant':
+      return buildGridTemplate(
+        customTitle || 'Eisenhower Matrix',
+        [
+          {
+            label: '\ud83d\udd25 Urgent & Important',
+            color: '#FBCFE8',
+            notes: ['Do first', 'Critical task'],
+          },
+          {
+            label: '\ud83c\udfaf Important, Not Urgent',
+            color: '#BFDBFE',
+            notes: ['Schedule this', 'Plan ahead'],
+          },
+          {
+            label: '\u26a1 Urgent, Not Important',
+            color: '#FEF08A',
+            notes: ['Delegate this', 'Quick task'],
+          },
+          {
+            label: '\ud83d\uddd1\ufe0f Not Urgent or Important',
+            color: '#E9D5FF',
+            notes: ['Eliminate', 'Reconsider'],
+          },
+        ],
+        2,
+        2,
+        baseX,
+        baseY
+      );
+
+    default:
+      return null;
   }
 }

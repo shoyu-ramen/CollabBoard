@@ -13,7 +13,7 @@ import type {
   AIRequestContext,
 } from '../types';
 
-const MAX_TOOL_ITERATIONS = 10;
+const MAX_TOOL_ITERATIONS = 25;
 
 export function buildSystemPrompt(
   boardState: BoardStateSummary[],
@@ -35,14 +35,21 @@ CURRENT BOARD STATE:
 ${objectsSummary}
 
 GUIDELINES:
-- When creating multiple related items (like a template), space them out so they don't overlap. Use reasonable spacing (e.g., 220px between sticky notes, 450px between frames).
 - Use descriptive text for sticky notes and frames.
 - Use varied colors to make the board visually appealing. Available sticky note colors: #FEF08A (yellow), #BBF7D0 (green), #BFDBFE (blue), #FBCFE8 (pink), #FED7AA (orange), #E9D5FF (purple).
-- When asked to create templates (e.g., SWOT analysis, Kanban board), create a frame with labeled sticky notes inside it.
 - Always confirm what you did after performing actions.
 - If you need to understand the current board state before making changes, use getBoardState first.
 - Keep text concise for sticky notes (they have limited space).
-- Place new objects in a visible area (positive x,y coordinates, typically 100-1500 range).${viewportCenter ? `\n\nVIEWPORT: The user is currently viewing the area around (${Math.round(viewportCenter.x)}, ${Math.round(viewportCenter.y)}). Place new objects near this area so they are immediately visible.` : ''}`;
+- Place new objects in a visible area (positive x,y coordinates, typically 100-1500 range).
+
+OBJECT DIMENSIONS:
+- Sticky notes are ALWAYS 200x200 pixels. You cannot change their size.
+- When spacing sticky notes manually, use at least 220px between them (200px + 20px gap).
+
+TEMPLATES:
+- When the user asks for a template (SWOT, Kanban, retrospective, pros/cons, Eisenhower matrix, etc.), ALWAYS use the createTemplate tool. It handles all layout and spacing automatically.
+- Place the template near the user's viewport so it's immediately visible.
+- After creating a template, describe what was created.${viewportCenter ? `\n\nVIEWPORT: The user is currently viewing the area around (${Math.round(viewportCenter.x)}, ${Math.round(viewportCenter.y)}). Place new objects near this area so they are immediately visible.` : ''}`;
 }
 
 export async function callClaude(

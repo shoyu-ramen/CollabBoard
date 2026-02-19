@@ -274,6 +274,44 @@ export const AI_TOOLS: ClaudeToolDefinition[] = [
     },
   },
   {
+    name: 'createTemplate',
+    description:
+      'Create a complete pre-built template layout on the whiteboard. This creates a frame with properly spaced section labels and sticky notes in a single operation. ALWAYS use this tool when the user asks for a template (SWOT, Kanban, retrospective, etc.) instead of manually creating individual objects.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          enum: [
+            'swot',
+            'kanban',
+            'retrospective',
+            'pros_cons',
+            'eisenhower',
+          ],
+          description:
+            'The type of template to create. "swot" = SWOT Analysis (2x2 grid), "kanban" = Kanban Board (3 columns), "retrospective" = Retro board (3 columns), "pros_cons" = Pros & Cons (2 columns), "eisenhower" = Eisenhower Matrix (2x2 grid).',
+        },
+        x: {
+          type: 'number',
+          description:
+            'X position for the top-left corner of the template (default: 100)',
+        },
+        y: {
+          type: 'number',
+          description:
+            'Y position for the top-left corner of the template (default: 100)',
+        },
+        title: {
+          type: 'string',
+          description:
+            'Optional custom title for the template frame. If not provided, uses the default name (e.g., "SWOT Analysis").',
+        },
+      },
+      required: ['type'],
+    },
+  },
+  {
     name: 'getBoardState',
     description:
       'Get the current state of all objects on the whiteboard. Use this to understand what is already on the board before making changes.',
