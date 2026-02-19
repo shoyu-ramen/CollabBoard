@@ -32,6 +32,7 @@ export function sanitize(text: string): string {
     .replace(/&amp;/g, '&')
     .replace(/&quot;/g, '"')
     .replace(/&#x27;/g, "'")
+    .replace(/\\n/g, '\n')
     .trim();
 }
 
@@ -768,6 +769,16 @@ interface TemplateSection {
   notes: string[];
 }
 
+interface MatrixColumn {
+  label: string;
+}
+
+interface MatrixRow {
+  label: string;
+  color: string;
+  notes: string[];
+}
+
 const NOTE_W = DEFAULT_STICKY_WIDTH;
 const NOTE_H = DEFAULT_STICKY_HEIGHT;
 const NOTE_GAP = 20;
@@ -856,6 +867,110 @@ function buildGridTemplate(
           text: noteText,
           noteColor: section.color,
           fill: section.color,
+        },
+      });
+    });
+  });
+
+  return items;
+}
+
+/**
+ * Build a matrix-style template with column headers across the top
+ * and row labels on the left, with a sticky note in each cell.
+ * Used for user journey maps, empathy maps, etc.
+ */
+function buildMatrixTemplate(
+  title: string,
+  columns: MatrixColumn[],
+  rows: MatrixRow[],
+  baseX: number,
+  baseY: number
+): TemplateItem[] {
+  const items: TemplateItem[] = [];
+  const LABEL_COL_W = 140;
+  const HEADER_H = 40;
+  const numCols = columns.length;
+  const numRows = rows.length;
+
+  const outerW =
+    PADDING + LABEL_COL_W + numCols * NOTE_STEP - NOTE_GAP + PADDING;
+  const outerH =
+    PADDING +
+    FRAME_TITLE_SPACE +
+    HEADER_H +
+    numRows * NOTE_STEP -
+    NOTE_GAP +
+    PADDING;
+
+  // Outer frame
+  items.push({
+    objectType: 'frame',
+    x: baseX,
+    y: baseY,
+    width: outerW,
+    height: outerH,
+    properties: { title, stroke: '#94A3B8', strokeWidth: 2 },
+  });
+
+  // Column headers (text objects)
+  columns.forEach((col, ci) => {
+    items.push({
+      objectType: 'text',
+      x: baseX + PADDING + LABEL_COL_W + ci * NOTE_STEP,
+      y: baseY + PADDING + FRAME_TITLE_SPACE,
+      width: NOTE_W,
+      height: HEADER_H,
+      properties: {
+        text: col.label,
+        fontSize: 14,
+        fontFamily: 'sans-serif',
+        fontStyle: 'bold',
+        color: '#374151',
+        textAlign: 'center',
+      },
+    });
+  });
+
+  // Row labels + sticky notes
+  rows.forEach((row, ri) => {
+    const rowY =
+      baseY +
+      PADDING +
+      FRAME_TITLE_SPACE +
+      HEADER_H +
+      ri * NOTE_STEP;
+
+    // Row label on the left
+    items.push({
+      objectType: 'text',
+      x: baseX + PADDING,
+      y: rowY,
+      width: LABEL_COL_W - 10,
+      height: NOTE_H,
+      properties: {
+        text: row.label,
+        fontSize: 13,
+        fontFamily: 'sans-serif',
+        fontStyle: 'bold',
+        color: '#374151',
+        textAlign: 'left',
+      },
+    });
+
+    // One sticky note per column in this row
+    row.notes.forEach((noteText, ci) => {
+      if (ci >= numCols) return;
+      items.push({
+        objectType: 'sticky_note',
+        x: baseX + PADDING + LABEL_COL_W + ci * NOTE_STEP,
+        y: rowY,
+        width: NOTE_W,
+        height: NOTE_H,
+        properties: {
+          text: noteText,
+          noteColor: row.color,
+          fill: row.color,
         },
       });
     });
@@ -1020,6 +1135,102 @@ function buildTemplate(
         ],
         2,
         2,
+        baseX,
+        baseY
+      );
+
+    case 'userjourneymap':
+    case 'userjourney':
+    case 'journeymap':
+    case 'customerjourney':
+    case 'customerjourneymap':
+      return buildMatrixTemplate(
+        customTitle || 'User Journey Map',
+        [
+          { label: 'Stage 1: Awareness' },
+          { label: 'Stage 2: Consideration' },
+          { label: 'Stage 3: Decision' },
+          { label: 'Stage 4: Retention' },
+          { label: 'Stage 5: Advocacy' },
+        ],
+        [
+          {
+            label: '\uD83C\uDFAF Actions',
+            color: '#BFDBFE',
+            notes: [
+              'Sees ad on social media',
+              'Reads reviews & compares options',
+              'Signs up & completes purchase',
+              'Uses product regularly',
+              'Shares & refers friends',
+            ],
+          },
+          {
+            label: '\uD83D\uDCAD Thoughts',
+            color: '#E9D5FF',
+            notes: [
+              '"I didn\'t know this existed!"',
+              '"Is this better than what I use?"',
+              '"I hope this is the right choice"',
+              '"This saves me so much time!"',
+              '"My friends need to know!"',
+            ],
+          },
+          {
+            label: '\uD83D\uDE0A Emotions',
+            color: '#FEF08A',
+            notes: [
+              'Curious but skeptical',
+              'Interested but uncertain',
+              'Excited but nervous',
+              'Satisfied & confident',
+              'Proud & enthusiastic',
+            ],
+          },
+          {
+            label: '\uD83D\uDD27 Pain Points',
+            color: '#FBCFE8',
+            notes: [
+              'Hard to find credible info',
+              'Too many options to compare',
+              'Hidden costs, confusing plans',
+              'Steep learning curve',
+              'Slow support response',
+            ],
+          },
+        ],
+        baseX,
+        baseY
+      );
+
+    case 'empathymap':
+    case 'empathy':
+      return buildGridTemplate(
+        customTitle || 'Empathy Map',
+        [
+          {
+            label: '\uD83D\uDC40 Says',
+            color: '#BFDBFE',
+            notes: ['What do they say out loud?', 'Direct quotes...'],
+          },
+          {
+            label: '\uD83E\uDDE0 Thinks',
+            color: '#E9D5FF',
+            notes: ['What are they thinking?', 'Worries & aspirations...'],
+          },
+          {
+            label: '\u2764\uFE0F Feels',
+            color: '#FBCFE8',
+            notes: ['What emotions do they feel?', 'Frustrations & joys...'],
+          },
+          {
+            label: '\uD83D\uDCAA Does',
+            color: '#BBF7D0',
+            notes: ['What actions do they take?', 'Observable behaviors...'],
+          },
+        ],
+        2,
+        1,
         baseX,
         baseY
       );

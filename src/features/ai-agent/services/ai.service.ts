@@ -43,11 +43,14 @@ GUIDELINES:
 - Place new objects in a visible area (positive x,y coordinates, typically 100-1500 range).
 
 OBJECT DIMENSIONS:
-- Sticky notes are ALWAYS 200x200 pixels. You cannot change their size.
-- When spacing sticky notes manually, use at least 220px between them (200px + 20px gap).
+- Sticky notes default to 200x200 pixels, but users may have resized them.
+- When arranging or spacing objects, ALWAYS use the actual width and height from getBoardState (not assumed defaults). Add a 20px gap between objects.
+- Text objects render at 200x100 pixels by default. Keep labels short (1-3 words).
 
 TEMPLATES:
-- When the user asks for a template (SWOT, Kanban, retrospective, pros/cons, Eisenhower matrix, etc.), ALWAYS use the createTemplate tool. It handles all layout and spacing automatically.
+- When the user asks for a template, ALWAYS use the createTemplate tool. Supported types: swot, kanban, retrospective, pros_cons, eisenhower, user_journey_map, empathy_map.
+- "user journey map", "customer journey", "journey map" → use type "user_journey_map".
+- "empathy map" → use type "empathy_map".
 - Place the template near the user's viewport so it's immediately visible.
 - After creating a template, describe what was created.${viewportCenter ? `\n\nVIEWPORT: The user is currently viewing the area around (${Math.round(viewportCenter.x)}, ${Math.round(viewportCenter.y)}). Place new objects near this area so they are immediately visible.` : ''}`;
 }

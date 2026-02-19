@@ -36,6 +36,14 @@ describe('sanitize', () => {
   it('strips nested HTML tags', () => {
     expect(sanitize('<div><span>text</span></div>')).toBe('text');
   });
+
+  it('converts literal backslash-n to actual newlines', () => {
+    expect(sanitize('line1\\nline2')).toBe('line1\nline2');
+  });
+
+  it('converts multiple literal backslash-n sequences', () => {
+    expect(sanitize('a\\nb\\nc')).toBe('a\nb\nc');
+  });
 });
 
 describe('getAnchorPosition', () => {

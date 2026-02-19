@@ -4,7 +4,7 @@ export const AI_TOOLS: ClaudeToolDefinition[] = [
   {
     name: 'createStickyNote',
     description:
-      'Create a sticky note on the whiteboard. Use this to add text-based notes, ideas, or labels.',
+      'Create a 200x200px sticky note on the whiteboard. Keep text to 6-8 words max — longer text gets cut off. Use this for short notes, ideas, or labels.',
     input_schema: {
       type: 'object',
       properties: {
@@ -32,7 +32,7 @@ export const AI_TOOLS: ClaudeToolDefinition[] = [
   {
     name: 'createText',
     description:
-      'Create a standalone text element on the whiteboard. Use this for headings, labels, or any text without a sticky note background.',
+      'Create a standalone text element on the whiteboard (200x100px). Use this for headings, labels, or any text without a sticky note background. Keep text short — long text will be clipped. Do NOT use backslash-n for line breaks.',
     input_schema: {
       type: 'object',
       properties: {
@@ -288,9 +288,11 @@ export const AI_TOOLS: ClaudeToolDefinition[] = [
             'retrospective',
             'pros_cons',
             'eisenhower',
+            'user_journey_map',
+            'empathy_map',
           ],
           description:
-            'The type of template to create. "swot" = SWOT Analysis (2x2 grid), "kanban" = Kanban Board (3 columns), "retrospective" = Retro board (3 columns), "pros_cons" = Pros & Cons (2 columns), "eisenhower" = Eisenhower Matrix (2x2 grid).',
+            'The type of template to create. "swot" = SWOT Analysis (2x2 grid), "kanban" = Kanban Board (3 columns), "retrospective" = Retro board (3 columns), "pros_cons" = Pros & Cons (2 columns), "eisenhower" = Eisenhower Matrix (2x2 grid), "user_journey_map" = User Journey Map (5 stages x 4 rows: actions, thoughts, emotions, pain points), "empathy_map" = Empathy Map (2x2: says, thinks, feels, does).',
         },
         x: {
           type: 'number',

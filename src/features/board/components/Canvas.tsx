@@ -29,6 +29,8 @@ import {
   DEFAULT_LINE_WIDTH,
   OBJECT_SYNC_THROTTLE_MS,
   TEXT_BROADCAST_THROTTLE_MS,
+  MIN_ZOOM,
+  MAX_ZOOM,
 } from '@/lib/constants';
 
 import StickyNote from './shapes/StickyNote';
@@ -123,6 +125,7 @@ export default function Canvas({
 
   const zoom = useCanvas((s) => s.zoom);
   const panOffset = useCanvas((s) => s.panOffset);
+  const setZoom = useCanvas((s) => s.setZoom);
   const setPanOffset = useCanvas((s) => s.setPanOffset);
   const zoomToPoint = useCanvas((s) => s.zoomToPoint);
   const setStageRef = useCanvas((s) => s.setStageRef);
@@ -150,6 +153,14 @@ export default function Canvas({
   const altPanActive = useRef(false);
   // Track whether primary mouse button is held
   const mouseHeldRef = useRef(false);
+
+  // Pinch-to-zoom state
+  const pinchRef = useRef<{
+    distance: number;
+    center: { x: number; y: number };
+    zoom: number;
+    panOffset: { x: number; y: number };
+  } | null>(null);
 
   // Anchor hover state (select mode: show anchors on hovered shape)
   const [hoveredObjectId, setHoveredObjectId] = useState<string | null>(null);
@@ -2143,28 +2154,84 @@ export default function Canvas({
     return connections;
   }, [selectedArrowEndpoints, objects]);
 
-  // Touch event wrappers: delegate to existing mouse handlers with preventDefault
-  // to suppress browser scroll/zoom and prevent synthetic mouse events (double-fire).
+  // Touch event handlers with pinch-to-zoom support.
+  // Single touch delegates to mouse handlers; two-finger touch handles pinch zoom + pan.
   const handleTouchStart = useCallback(
     (e: Konva.KonvaEventObject<TouchEvent>) => {
       e.evt.preventDefault();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      handleMouseDown(e as any);
+      const touches = e.evt.touches;
+      if (touches.length === 2) {
+        // Start pinch gesture — record initial distance, center, and canvas state
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        pinchRef.current = {
+          distance: Math.sqrt(dx * dx + dy * dy),
+          center: {
+            x: (touches[0].clientX + touches[1].clientX) / 2,
+            y: (touches[0].clientY + touches[1].clientY) / 2,
+          },
+          zoom,
+          panOffset: { ...panOffset },
+        };
+      } else if (touches.length === 1) {
+        pinchRef.current = null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        handleMouseDown(e as any);
+      }
     },
-    [handleMouseDown]
+    [handleMouseDown, zoom, panOffset]
   );
 
   const handleTouchMove = useCallback(
     (e: Konva.KonvaEventObject<TouchEvent>) => {
       e.evt.preventDefault();
-      handleMouseMove();
+      const touches = e.evt.touches;
+      if (touches.length === 2 && pinchRef.current) {
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        const newDist = Math.sqrt(dx * dx + dy * dy);
+        const scale = newDist / pinchRef.current.distance;
+
+        const newZoom = Math.max(
+          MIN_ZOOM,
+          Math.min(MAX_ZOOM, pinchRef.current.zoom * scale)
+        );
+
+        // Current center of the two fingers
+        const cx = (touches[0].clientX + touches[1].clientX) / 2;
+        const cy = (touches[0].clientY + touches[1].clientY) / 2;
+
+        // The world point under the initial pinch center stays fixed
+        const worldX =
+          (pinchRef.current.center.x - pinchRef.current.panOffset.x) /
+          pinchRef.current.zoom;
+        const worldY =
+          (pinchRef.current.center.y - pinchRef.current.panOffset.y) /
+          pinchRef.current.zoom;
+
+        // New pan offset: keep world point under current finger center
+        const newPanX = cx - worldX * newZoom;
+        const newPanY = cy - worldY * newZoom;
+
+        setZoom(newZoom);
+        setPanOffset({ x: newPanX, y: newPanY });
+      } else if (touches.length === 1 && !pinchRef.current) {
+        handleMouseMove();
+      }
     },
-    [handleMouseMove]
+    [handleMouseMove, setZoom, setPanOffset]
   );
 
   const handleTouchEnd = useCallback(
     (e: Konva.KonvaEventObject<TouchEvent>) => {
       e.evt.preventDefault();
+      if (pinchRef.current) {
+        // End of pinch gesture — if fingers still down, stay in pinch mode
+        if (e.evt.touches.length < 2) {
+          pinchRef.current = null;
+        }
+        return;
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       handleMouseUp(e as any);
     },
