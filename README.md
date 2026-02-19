@@ -4,8 +4,6 @@ A real-time collaborative whiteboard application (like Miro) with an AI-powered 
 
 **Deployed:** <!-- TODO: Add your Railway deployment URL here -->
 
-![CollabBoard Screenshot](<!-- TODO: Add screenshot path or URL -->)
-
 ## Tech Stack
 
 - **Framework:** Next.js 15 (App Router) + TypeScript (strict) + Tailwind CSS

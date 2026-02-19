@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from 'next-themes';
-import { Stage, Layer, Rect, Line, Ellipse, Arrow, Circle as KonvaCircle } from 'react-konva';
+import { Stage, Layer, Rect, Line, Ellipse, Arrow, Circle as KonvaCircle, Shape } from 'react-konva';
 import type Konva from 'konva';
 import { v4 as uuidv4 } from 'uuid';
 import { useBoardObjects } from '../hooks/useBoardObjects';
@@ -62,38 +62,63 @@ interface DrawingPreview {
 const GRID_SIZE = 50;
 const ANCHOR_SNAP_RADIUS = 15;
 
-function GridLayer({ width, height, isDark }: { width: number; height: number; isDark: boolean }) {
+/**
+ * InfiniteGrid draws a dot-grid or line-grid using a single Konva Shape
+ * with a custom sceneFunc.  Because sceneFunc runs on every Konva redraw
+ * (including mid-drag), the grid follows the viewport in real time with
+ * zero React re-renders.
+ */
+function InfiniteGrid({
+  isDark,
+  stageRef,
+}: {
+  isDark: boolean;
+  stageRef: React.RefObject<Konva.Stage | null>;
+}) {
   const gridStroke = isDark ? '#1f2937' : '#e5e7eb';
-  const lines = useMemo(() => {
-    const result: React.ReactElement[] = [];
-    const w = width * 3;
-    const h = height * 3;
-    for (let i = -w; i <= w; i += GRID_SIZE) {
-      result.push(
-        <Line
-          key={`v-${i}`}
-          points={[i, -h, i, h]}
-          stroke={gridStroke}
-          strokeWidth={1}
-          listening={false}
-        />
-      );
-    }
-    for (let j = -h; j <= h; j += GRID_SIZE) {
-      result.push(
-        <Line
-          key={`h-${j}`}
-          points={[-w, j, w, j]}
-          stroke={gridStroke}
-          strokeWidth={1}
-          listening={false}
-        />
-      );
-    }
-    return result;
-  }, [width, height, gridStroke]);
 
-  return <>{lines}</>;
+  const sceneFunc = useCallback(
+    (ctx: Konva.Context) => {
+      const stage = stageRef.current;
+      if (!stage) return;
+      const tr = stage.getAbsoluteTransform().copy().invert();
+      // Top-left and bottom-right of the visible area in canvas coords
+      const tl = tr.point({ x: 0, y: 0 });
+      const br = tr.point({
+        x: stage.width(),
+        y: stage.height(),
+      });
+      const pad = GRID_SIZE * 2;
+      const left =
+        Math.floor((tl.x - pad) / GRID_SIZE) * GRID_SIZE;
+      const right =
+        Math.ceil((br.x + pad) / GRID_SIZE) * GRID_SIZE;
+      const top =
+        Math.floor((tl.y - pad) / GRID_SIZE) * GRID_SIZE;
+      const bottom =
+        Math.ceil((br.y + pad) / GRID_SIZE) * GRID_SIZE;
+
+      const _ctx = ctx._context as CanvasRenderingContext2D;
+      _ctx.beginPath();
+      _ctx.strokeStyle = gridStroke;
+      _ctx.lineWidth = 1 / (stage.scaleX() || 1);
+
+      for (let x = left; x <= right; x += GRID_SIZE) {
+        _ctx.moveTo(x, top);
+        _ctx.lineTo(x, bottom);
+      }
+      for (let y = top; y <= bottom; y += GRID_SIZE) {
+        _ctx.moveTo(left, y);
+        _ctx.lineTo(right, y);
+      }
+      _ctx.stroke();
+    },
+    [gridStroke, stageRef]
+  );
+
+  return (
+    <Shape sceneFunc={sceneFunc} listening={false} />
+  );
 }
 
 interface CanvasProps {
@@ -2271,19 +2296,32 @@ export default function Canvas({
       >
         {/* Background grid layer */}
         <Layer listening={false}>
-          <Rect
-            x={-5000}
-            y={-5000}
-            width={10000}
-            height={10000}
-            fill={isDark ? '#111827' : '#fafafa'}
+          <Shape
+            sceneFunc={(ctx: Konva.Context) => {
+              const stage = stageRef.current;
+              if (!stage) return;
+              const tr = stage
+                .getAbsoluteTransform()
+                .copy()
+                .invert();
+              const tl = tr.point({ x: 0, y: 0 });
+              const br = tr.point({
+                x: stage.width(),
+                y: stage.height(),
+              });
+              const _ctx =
+                ctx._context as CanvasRenderingContext2D;
+              _ctx.fillStyle = isDark ? '#111827' : '#fafafa';
+              _ctx.fillRect(
+                tl.x - 100,
+                tl.y - 100,
+                br.x - tl.x + 200,
+                br.y - tl.y + 200
+              );
+            }}
             listening={false}
           />
-          <GridLayer
-            width={dimensions.width}
-            height={dimensions.height}
-            isDark={isDark}
-          />
+          <InfiniteGrid isDark={isDark} stageRef={stageRef} />
         </Layer>
 
         {/* Objects layer */}
