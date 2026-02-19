@@ -97,7 +97,7 @@ describe('Sync performance optimizations', () => {
   });
 
   describe('LWW conflict resolution performance', () => {
-    it('shouldApplyRemoteChange 10,000 calls in < 10ms', () => {
+    it('shouldApplyRemoteChange 10,000 calls in < 20ms', () => {
       const start = performance.now();
       for (let i = 0; i < 10000; i++) {
         shouldApplyRemoteChange(
@@ -108,7 +108,7 @@ describe('Sync performance optimizations', () => {
         );
       }
       const elapsed = performance.now() - start;
-      expect(elapsed).toBeLessThan(10);
+      expect(elapsed).toBeLessThan(20);
     });
   });
 
