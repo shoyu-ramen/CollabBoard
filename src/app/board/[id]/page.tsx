@@ -14,6 +14,7 @@ import { MemberManagementModal } from '@/features/board/components/MemberManagem
 import { AIButton } from '@/features/ai-agent/components/AIButton';
 import { AIChatPanel } from '@/features/ai-agent/components/AIChatPanel';
 import { FloatingActionBar } from '@/features/board/components/FloatingActionBar';
+import { Minimap } from '@/features/board/components/Minimap';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { useBoardRealtime } from '@/features/board/hooks/useBoardRealtime';
 import { useBoardPersistence } from '@/features/board/hooks/useBoardPersistence';
@@ -272,6 +273,7 @@ export default function BoardPage({
         />
       )}
       <AIChatPanel boardId={boardId} isOpen={aiPanelOpen} onClose={() => setAiPanelOpen(false)} />
+      <Minimap onlineUsers={onlineUsers} currentUserId={userId} />
       <FollowBanner currentUserId={userId} currentUserName={userName} />
       {/* Connection status banner */}
       {(connectionStatus === 'disconnected' || connectionStatus === 'reconnecting') && !loading && (
