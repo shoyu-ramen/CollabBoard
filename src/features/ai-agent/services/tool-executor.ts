@@ -66,6 +66,211 @@ export function getAnchorPosition(
   }
 }
 
+// --- Layout algorithm types & pure functions ---
+
+interface LayoutItem {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  object_type: string;
+}
+
+interface LayoutPosition {
+  id: string;
+  x: number;
+  y: number;
+}
+
+/**
+ * Arrange items in a uniform grid layout.
+ * Uses sqrt(n) columns with uniform cell size based on the largest item.
+ */
+export function computeGridLayout(
+  items: LayoutItem[],
+  anchorX: number,
+  anchorY: number,
+  spacing: number
+): LayoutPosition[] {
+  if (items.length === 0) return [];
+
+  const cols = Math.max(1, Math.ceil(Math.sqrt(items.length)));
+  const maxW = Math.max(...items.map((i) => i.width));
+  const maxH = Math.max(...items.map((i) => i.height));
+  const cellW = maxW + spacing;
+  const cellH = maxH + spacing;
+
+  return items.map((item, idx) => ({
+    id: item.id,
+    x: anchorX + (idx % cols) * cellW,
+    y: anchorY + Math.floor(idx / cols) * cellH,
+  }));
+}
+
+/**
+ * Union-find clustering: group items within a proximity threshold,
+ * then arrange each cluster internally as a grid, and arrange
+ * clusters in a meta-grid.
+ */
+export function computeClusterLayout(
+  items: LayoutItem[],
+  anchorX: number,
+  anchorY: number,
+  spacing: number
+): LayoutPosition[] {
+  if (items.length === 0) return [];
+
+  const THRESHOLD = 300;
+
+  // Union-find
+  const parent = items.map((_, i) => i);
+  function find(a: number): number {
+    while (parent[a] !== a) {
+      parent[a] = parent[parent[a]];
+      a = parent[a];
+    }
+    return a;
+  }
+  function union(a: number, b: number) {
+    parent[find(a)] = find(b);
+  }
+
+  // Cluster items by proximity (center-to-center distance)
+  for (let i = 0; i < items.length; i++) {
+    for (let j = i + 1; j < items.length; j++) {
+      const cx1 = items[i].x + items[i].width / 2;
+      const cy1 = items[i].y + items[i].height / 2;
+      const cx2 = items[j].x + items[j].width / 2;
+      const cy2 = items[j].y + items[j].height / 2;
+      const dist = Math.sqrt((cx1 - cx2) ** 2 + (cy1 - cy2) ** 2);
+      if (dist < THRESHOLD) union(i, j);
+    }
+  }
+
+  // Group by cluster
+  const clusters = new Map<number, LayoutItem[]>();
+  items.forEach((item, i) => {
+    const root = find(i);
+    if (!clusters.has(root)) clusters.set(root, []);
+    clusters.get(root)!.push(item);
+  });
+
+  const clusterArrays = Array.from(clusters.values());
+  const metaCols = Math.max(1, Math.ceil(Math.sqrt(clusterArrays.length)));
+  const result: LayoutPosition[] = [];
+  const clusterSpacing = spacing * 3;
+
+  let metaX = anchorX;
+  let metaY = anchorY;
+  let rowMaxH = 0;
+
+  clusterArrays.forEach((cluster, ci) => {
+    // Lay out each cluster internally as a grid
+    const positions = computeGridLayout(cluster, metaX, metaY, spacing);
+    result.push(...positions);
+
+    // Compute bounding box of this cluster
+    const clusterMaxW = Math.max(...cluster.map((i) => i.width));
+    const clusterMaxH = Math.max(...cluster.map((i) => i.height));
+    const cols = Math.max(1, Math.ceil(Math.sqrt(cluster.length)));
+    const rows = Math.ceil(cluster.length / cols);
+    const bboxW = cols * (clusterMaxW + spacing);
+    const bboxH = rows * (clusterMaxH + spacing);
+
+    rowMaxH = Math.max(rowMaxH, bboxH);
+
+    if ((ci + 1) % metaCols === 0) {
+      metaX = anchorX;
+      metaY += rowMaxH + clusterSpacing;
+      rowMaxH = 0;
+    } else {
+      metaX += bboxW + clusterSpacing;
+    }
+  });
+
+  return result;
+}
+
+/**
+ * Group items by object_type, lay out each group in its own vertical section.
+ */
+export function computeTypeLayout(
+  items: LayoutItem[],
+  anchorX: number,
+  anchorY: number,
+  spacing: number
+): LayoutPosition[] {
+  if (items.length === 0) return [];
+
+  // Group by type
+  const groups = new Map<string, LayoutItem[]>();
+  for (const item of items) {
+    if (!groups.has(item.object_type)) groups.set(item.object_type, []);
+    groups.get(item.object_type)!.push(item);
+  }
+
+  const result: LayoutPosition[] = [];
+  let sectionX = anchorX;
+
+  for (const [, groupItems] of groups) {
+    const maxW = Math.max(...groupItems.map((i) => i.width));
+    let curY = anchorY;
+
+    for (const item of groupItems) {
+      result.push({ id: item.id, x: sectionX, y: curY });
+      curY += item.height + spacing;
+    }
+
+    sectionX += maxW + spacing * 3;
+  }
+
+  return result;
+}
+
+/**
+ * Parse a process description into individual step strings.
+ */
+export function parseFlowchartSteps(description: string): string[] {
+  // Try numbered list first (e.g., "1. Step one\n2. Step two")
+  const numbered = description.match(/^\s*\d+[\.\)]\s*.+/gm);
+  if (numbered && numbered.length >= 2) {
+    return numbered
+      .map((s) => s.replace(/^\s*\d+[\.\)]\s*/, '').trim())
+      .filter(Boolean);
+  }
+
+  // Try newline-separated
+  const lines = description
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (lines.length >= 2) {
+    return lines;
+  }
+
+  // Try comma-separated
+  const commas = description
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (commas.length >= 2) {
+    return commas;
+  }
+
+  // Try sentence boundaries
+  const sentences = description
+    .split(/[.;]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (sentences.length >= 2) {
+    return sentences;
+  }
+
+  // Single item or unparseable
+  return description.trim() ? [description.trim()] : [];
+}
+
 interface InsertObject {
   id: string;
   board_id: string;
@@ -740,6 +945,479 @@ async function executeToolInner(
         toolName,
         input,
         result: JSON.stringify(summary, null, 2),
+      };
+    }
+
+    case 'organizeBoard': {
+      const strategy = (input.strategy as string) || 'grid';
+      const spacing = (input.spacing as number) ?? 40;
+      const anchorX = (input.anchorX as number) ?? 100;
+      const anchorY = (input.anchorY as number) ?? 100;
+
+      const { data, error } = await supabase
+        .from('whiteboard_objects')
+        .select('id, object_type, x, y, width, height')
+        .eq('board_id', boardId);
+
+      if (error) {
+        return {
+          toolName,
+          input,
+          result: `Error fetching board objects: ${error.message}`,
+        };
+      }
+
+      // Filter out arrows (they auto-recompute from connected objects)
+      const movable = (data || []).filter(
+        (obj) => obj.object_type !== 'arrow'
+      ) as LayoutItem[];
+
+      if (movable.length === 0) {
+        return {
+          toolName,
+          input,
+          result:
+            'Nothing to organize — the board has no movable objects (arrows are skipped).',
+        };
+      }
+
+      let positions: LayoutPosition[];
+      switch (strategy) {
+        case 'cluster':
+          positions = computeClusterLayout(
+            movable,
+            anchorX,
+            anchorY,
+            spacing
+          );
+          break;
+        case 'type':
+          positions = computeTypeLayout(
+            movable,
+            anchorX,
+            anchorY,
+            spacing
+          );
+          break;
+        default:
+          positions = computeGridLayout(
+            movable,
+            anchorX,
+            anchorY,
+            spacing
+          );
+      }
+
+      // Batch-update positions for movable objects
+      const now = new Date().toISOString();
+      await Promise.all(
+        positions.map((pos) =>
+          supabase
+            .from('whiteboard_objects')
+            .update({
+              x: pos.x,
+              y: pos.y,
+              updated_by: userId,
+              updated_at: now,
+            })
+            .eq('id', pos.id)
+            .eq('board_id', boardId)
+        )
+      );
+
+      // Recompute arrow positions based on their connected objects' new locations
+      const arrows = (data || []).filter(
+        (obj) => obj.object_type === 'arrow'
+      );
+      if (arrows.length > 0) {
+        // Build a lookup of new positions (id -> { x, y, width, height })
+        const posMap = new Map<
+          string,
+          { x: number; y: number; width: number; height: number }
+        >();
+        for (const item of movable) {
+          const newPos = positions.find((p) => p.id === item.id);
+          posMap.set(item.id, {
+            x: newPos?.x ?? item.x,
+            y: newPos?.y ?? item.y,
+            width: item.width,
+            height: item.height,
+          });
+        }
+
+        // Fetch arrow properties to get connection info
+        const arrowIds = arrows.map((a) => a.id);
+        const { data: arrowData } = await supabase
+          .from('whiteboard_objects')
+          .select('id, x, y, width, height, properties')
+          .in('id', arrowIds);
+
+        if (arrowData) {
+          await Promise.all(
+            arrowData.map((arrow) => {
+              const props = arrow.properties as Record<string, unknown>;
+              const startObjId = props?.startObjectId as
+                | string
+                | undefined;
+              const endObjId = props?.endObjectId as
+                | string
+                | undefined;
+
+              if (!startObjId || !endObjId) return Promise.resolve();
+
+              const startObj = posMap.get(startObjId);
+              const endObj = posMap.get(endObjId);
+              if (!startObj || !endObj) return Promise.resolve();
+
+              // Auto-compute best anchor sides based on relative position
+              const sCx = startObj.x + startObj.width / 2;
+              const sCy = startObj.y + startObj.height / 2;
+              const eCx = endObj.x + endObj.width / 2;
+              const eCy = endObj.y + endObj.height / 2;
+              const absDx = Math.abs(eCx - sCx);
+              const absDy = Math.abs(eCy - sCy);
+
+              let fromSide: string;
+              let toSide: string;
+              if (absDx >= absDy) {
+                // Horizontal: use right→left or left→right
+                fromSide = eCx >= sCx ? 'right-50' : 'left-50';
+                toSide = eCx >= sCx ? 'left-50' : 'right-50';
+              } else {
+                // Vertical: use bottom→top or top→bottom
+                fromSide = eCy >= sCy ? 'bottom-50' : 'top-50';
+                toSide = eCy >= sCy ? 'top-50' : 'bottom-50';
+              }
+
+              const fromAnchor = getAnchorPosition(
+                startObj.x,
+                startObj.y,
+                startObj.width,
+                startObj.height,
+                fromSide
+              );
+              const toAnchor = getAnchorPosition(
+                endObj.x,
+                endObj.y,
+                endObj.width,
+                endObj.height,
+                toSide
+              );
+              const dx = toAnchor.x - fromAnchor.x;
+              const dy = toAnchor.y - fromAnchor.y;
+
+              return supabase
+                .from('whiteboard_objects')
+                .update({
+                  x: fromAnchor.x,
+                  y: fromAnchor.y,
+                  width: dx,
+                  height: dy,
+                  properties: {
+                    ...props,
+                    points: [0, 0, dx, dy],
+                    startAnchorSide: fromSide,
+                    endAnchorSide: toSide,
+                  },
+                  updated_by: userId,
+                  updated_at: now,
+                })
+                .eq('id', arrow.id)
+                .eq('board_id', boardId);
+            })
+          );
+        }
+      }
+
+      return {
+        toolName,
+        input,
+        result: `Organized ${movable.length} objects using "${strategy}" layout. ${arrows.length > 0 ? `Repositioned ${arrows.length} arrows to follow their connected objects.` : ''}`,
+      };
+    }
+
+    case 'summarizeBoard': {
+      const { data, error } = await supabase
+        .from('whiteboard_objects')
+        .select('id, object_type, properties, x, width')
+        .eq('board_id', boardId);
+
+      if (error) {
+        return {
+          toolName,
+          input,
+          result: `Error fetching board objects: ${error.message}`,
+        };
+      }
+
+      const objects = data || [];
+      if (objects.length === 0) {
+        return {
+          toolName,
+          input,
+          result:
+            'The board is empty — nothing to summarize.',
+        };
+      }
+
+      // Extract text content grouped by object type
+      const byType = new Map<string, string[]>();
+      for (const obj of objects) {
+        const props = obj.properties as Record<string, unknown>;
+        const text =
+          (props?.text as string) || (props?.title as string);
+        if (text) {
+          const type = obj.object_type as string;
+          if (!byType.has(type)) byType.set(type, []);
+          byType.get(type)!.push(text);
+        }
+      }
+
+      if (byType.size === 0) {
+        return {
+          toolName,
+          input,
+          result:
+            'No text content found on the board — there are objects but none contain text.',
+        };
+      }
+
+      // Build a content digest for the tool result
+      let digest = '';
+      for (const [type, texts] of byType) {
+        digest += `${type}: ${texts.join(', ')}\n`;
+      }
+      if (digest.length > 4000) {
+        digest = digest.slice(0, 4000) + '\n... (truncated)';
+      }
+
+      // Build summary notes: one per type group, capped at 6
+      const summaryNotes: { label: string; items: string[] }[] = [];
+      for (const [type, texts] of byType) {
+        const uniqueTexts = [...new Set(texts)];
+        const preview =
+          uniqueTexts.length <= 3
+            ? uniqueTexts.join(', ')
+            : `${uniqueTexts.slice(0, 3).join(', ')} +${uniqueTexts.length - 3} more`;
+        summaryNotes.push({ label: type, items: [preview] });
+      }
+      // Add a count note
+      const totalTextItems = Array.from(byType.values()).reduce(
+        (sum, arr) => sum + arr.length,
+        0
+      );
+
+      // Auto-position: place to the right of existing content if no x given
+      let x = input.x as number | undefined;
+      const y = (input.y as number) ?? 100;
+      if (x == null) {
+        const maxRight = objects.reduce((max, obj) => {
+          const objX = (obj.x as number) ?? 0;
+          const objW = (obj.width as number) ?? 0;
+          return Math.max(max, objX + objW);
+        }, 0);
+        x = maxRight > 0 ? maxRight + 80 : 100;
+      }
+      const noteW = DEFAULT_STICKY_WIDTH;
+      const noteH = DEFAULT_STICKY_HEIGHT;
+      const noteGap = 20;
+      const padding = 20;
+      const cols = Math.min(summaryNotes.length + 1, 3); // +1 for totals note
+      const totalNotes = summaryNotes.length + 1;
+      const rows = Math.ceil(totalNotes / cols);
+      const frameW = cols * (noteW + noteGap) - noteGap + padding * 2;
+      const frameTitleSpace = 28;
+      const frameH =
+        rows * (noteH + noteGap) - noteGap + padding * 2 + frameTitleSpace;
+
+      const colors = [
+        '#BFDBFE',
+        '#BBF7D0',
+        '#FEF08A',
+        '#FBCFE8',
+        '#FED7AA',
+        '#E9D5FF',
+      ];
+
+      // Create the frame
+      const { id: frameId, error: frameErr } = await insertObject(
+        boardId,
+        'frame',
+        x,
+        y,
+        frameW,
+        frameH,
+        { title: 'Board Summary', stroke: '#94A3B8', strokeWidth: 2 },
+        userId
+      );
+      if (frameErr) {
+        return {
+          toolName,
+          input,
+          result: `Error creating summary frame: ${frameErr}`,
+        };
+      }
+
+      // Create notes inside the frame
+      const allNoteData = [
+        ...summaryNotes.map((n, i) => ({
+          text: `${n.label}: ${n.items[0]}`,
+          color: colors[i % colors.length],
+        })),
+        {
+          text: `Total: ${objects.length} objects, ${totalTextItems} with text`,
+          color: '#E9D5FF',
+        },
+      ];
+
+      for (let i = 0; i < allNoteData.length; i++) {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const nx = x + padding + col * (noteW + noteGap);
+        const ny =
+          y + padding + frameTitleSpace + row * (noteH + noteGap);
+
+        await insertObject(
+          boardId,
+          'sticky_note',
+          nx,
+          ny,
+          noteW,
+          noteH,
+          {
+            text: allNoteData[i].text,
+            noteColor: allNoteData[i].color,
+            fill: allNoteData[i].color,
+          },
+          userId
+        );
+      }
+
+      return {
+        toolName,
+        input,
+        result: `Created board summary at (${x}, ${y}) with ${allNoteData.length} notes in a frame. Content digest:\n${digest}`,
+        objectId: frameId,
+      };
+    }
+
+    case 'generateFlowchart': {
+      const description = (input.description as string) || '';
+      const direction =
+        (input.direction as string) || 'top-to-bottom';
+      const startX = (input.x as number) ?? 100;
+      const startY = (input.y as number) ?? 100;
+      const nodeColor = (input.nodeColor as string) ?? '#BFDBFE';
+
+      const steps = parseFlowchartSteps(description);
+
+      if (steps.length === 0) {
+        return {
+          toolName,
+          input,
+          result:
+            'Error: Could not parse any steps from the description. Provide a comma-separated list, numbered steps, or one step per line.',
+        };
+      }
+
+      // Cap at 20 nodes
+      const cappedSteps = steps.slice(0, 20);
+
+      const nodeW = DEFAULT_STICKY_WIDTH;
+      const nodeH = DEFAULT_STICKY_HEIGHT;
+      const gap = 80; // Space between nodes (including arrow room)
+      const isVertical = direction === 'top-to-bottom';
+
+      const createdIds: string[] = [];
+
+      // Create nodes
+      for (let i = 0; i < cappedSteps.length; i++) {
+        const text = sanitize(cappedSteps[i]);
+        const nx = isVertical ? startX : startX + i * (nodeW + gap);
+        const ny = isVertical ? startY + i * (nodeH + gap) : startY;
+
+        const { id, error } = await insertObject(
+          boardId,
+          'sticky_note',
+          nx,
+          ny,
+          nodeW,
+          nodeH,
+          { text, noteColor: nodeColor, fill: nodeColor },
+          userId
+        );
+        if (error) {
+          return {
+            toolName,
+            input,
+            result: `Error creating flowchart node: ${error}. Created ${createdIds.length} nodes before failure.`,
+          };
+        }
+        createdIds.push(id);
+      }
+
+      // Create arrows between consecutive nodes
+      for (let i = 0; i < createdIds.length - 1; i++) {
+        const fromIdx = i;
+        const toIdx = i + 1;
+        const fromX = isVertical
+          ? startX
+          : startX + fromIdx * (nodeW + gap);
+        const fromY = isVertical
+          ? startY + fromIdx * (nodeH + gap)
+          : startY;
+        const toX = isVertical
+          ? startX
+          : startX + toIdx * (nodeW + gap);
+        const toY = isVertical
+          ? startY + toIdx * (nodeH + gap)
+          : startY;
+
+        const fromSide = isVertical ? 'bottom-50' : 'right-50';
+        const toSide = isVertical ? 'top-50' : 'left-50';
+
+        const fromAnchor = getAnchorPosition(
+          fromX,
+          fromY,
+          nodeW,
+          nodeH,
+          fromSide
+        );
+        const toAnchor = getAnchorPosition(
+          toX,
+          toY,
+          nodeW,
+          nodeH,
+          toSide
+        );
+        const dx = toAnchor.x - fromAnchor.x;
+        const dy = toAnchor.y - fromAnchor.y;
+
+        await insertObject(
+          boardId,
+          'arrow',
+          fromAnchor.x,
+          fromAnchor.y,
+          dx,
+          dy,
+          {
+            stroke: '#000000',
+            strokeWidth: 2,
+            points: [0, 0, dx, dy],
+            startObjectId: createdIds[i],
+            endObjectId: createdIds[i + 1],
+            startAnchorSide: fromSide,
+            endAnchorSide: toSide,
+          },
+          userId
+        );
+      }
+
+      const arrowCount = Math.max(0, createdIds.length - 1);
+      return {
+        toolName,
+        input,
+        result: `Created flowchart with ${createdIds.length} nodes and ${arrowCount} arrows (${direction}).`,
       };
     }
 

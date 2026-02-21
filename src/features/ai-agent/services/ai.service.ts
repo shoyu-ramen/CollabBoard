@@ -52,7 +52,12 @@ TEMPLATES:
 - "user journey map", "customer journey", "journey map" → use type "user_journey_map".
 - "empathy map" → use type "empathy_map".
 - Place the template near the user's viewport so it's immediately visible.
-- After creating a template, describe what was created.${viewportCenter ? `\n\nVIEWPORT: The user is currently viewing the area around (${Math.round(viewportCenter.x)}, ${Math.round(viewportCenter.y)}). Place new objects near this area so they are immediately visible.` : ''}`;
+- After creating a template, describe what was created.
+
+ADVANCED TOOLS:
+- organizeBoard: when the user wants to clean up, tidy, or arrange the board. Choose "grid" for uniform layout, "cluster" to keep nearby items grouped, or "type" to group by object type.
+- summarizeBoard: when the user wants a summary of what is on the board. This returns a content digest — synthesize the key themes, then use createFrame + createStickyNote to build the summary on the board.
+- generateFlowchart: when the user describes a process, workflow, or sequence of steps. Creates connected sticky note nodes with arrows. Supports top-to-bottom or left-to-right direction.${viewportCenter ? `\n\nVIEWPORT: The user is currently viewing the area around (${Math.round(viewportCenter.x)}, ${Math.round(viewportCenter.y)}). Place new objects near this area so they are immediately visible.` : ''}`;
 }
 
 export async function callClaude(

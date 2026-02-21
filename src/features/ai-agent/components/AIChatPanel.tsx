@@ -42,6 +42,18 @@ function formatToolCallLabel(toolCall: ToolCallResult): string {
       return `Changed color to ${input.color as string}`;
     case 'getBoardState':
       return `Retrieved board state`;
+    case 'deleteObject':
+      return `Deleted object`;
+    case 'createTemplate':
+      return `Created ${(input.type as string) || ''} template`;
+    case 'createText':
+      return `Created text "${(input.text as string)?.slice(0, 30) || ''}${((input.text as string)?.length || 0) > 30 ? '...' : ''}"`;
+    case 'organizeBoard':
+      return `Organized board (${(input.strategy as string) || 'grid'} layout)`;
+    case 'summarizeBoard':
+      return `Created board summary`;
+    case 'generateFlowchart':
+      return `Generated flowchart`;
     default:
       return toolName;
   }
@@ -194,9 +206,9 @@ export function AIChatPanel({ boardId, isOpen, onClose }: AIChatPanelProps) {
             </p>
             <div className="mt-4 flex flex-col gap-2">
               {[
-                'Create a SWOT analysis template',
-                'Add 3 sticky notes for brainstorming',
-                'Create a Kanban board layout',
+                'Organize this board into a grid',
+                'Summarize everything on the board',
+                'Create a flowchart for user signup',
               ].map((suggestion) => (
                 <button
                   key={suggestion}

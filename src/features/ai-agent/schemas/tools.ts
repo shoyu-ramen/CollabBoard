@@ -322,4 +322,97 @@ export const AI_TOOLS: ClaudeToolDefinition[] = [
       properties: {},
     },
   },
+  {
+    name: 'organizeBoard',
+    description:
+      'Rearrange all objects on the board into a clean layout. Use this when the user wants to tidy up, clean up, or organize the board. Skips arrows (they auto-recompute from connected objects).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        strategy: {
+          type: 'string',
+          enum: ['grid', 'cluster', 'type'],
+          description:
+            'Layout strategy: "grid" = uniform grid, "cluster" = group nearby objects together, "type" = group by object type. Default: "grid".',
+        },
+        spacing: {
+          type: 'number',
+          description:
+            'Gap in pixels between objects (default: 40)',
+        },
+        anchorX: {
+          type: 'number',
+          description:
+            'X position for the top-left of the layout (default: 100)',
+        },
+        anchorY: {
+          type: 'number',
+          description:
+            'Y position for the top-left of the layout (default: 100)',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'summarizeBoard',
+    description:
+      'Read all text content from objects on the board and return a content digest. Use this when the user wants a summary of what is on the board. After receiving the digest, synthesize it and create summary objects (frames + sticky notes) on the board.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        format: {
+          type: 'string',
+          enum: ['sticky_note', 'frame'],
+          description:
+            'How to present the summary on the board (default: "frame")',
+        },
+        x: {
+          type: 'number',
+          description: 'X position for summary output (default: 100)',
+        },
+        y: {
+          type: 'number',
+          description: 'Y position for summary output (default: 100)',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'generateFlowchart',
+    description:
+      'Generate a connected flowchart diagram from a process description. Creates sticky note nodes with arrows connecting them in sequence. Use this when the user describes a process, workflow, or sequence of steps to visualize.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        description: {
+          type: 'string',
+          description:
+            'The process or workflow to visualize. Can be a comma-separated list, numbered steps, or natural language description of steps.',
+        },
+        direction: {
+          type: 'string',
+          enum: ['top-to-bottom', 'left-to-right'],
+          description: 'Layout direction (default: "top-to-bottom")',
+        },
+        x: {
+          type: 'number',
+          description:
+            'X position for the start of the flowchart (default: 100)',
+        },
+        y: {
+          type: 'number',
+          description:
+            'Y position for the start of the flowchart (default: 100)',
+        },
+        nodeColor: {
+          type: 'string',
+          description:
+            'Color for the flowchart nodes as hex (default: "#BFDBFE")',
+        },
+      },
+      required: ['description'],
+    },
+  },
 ];

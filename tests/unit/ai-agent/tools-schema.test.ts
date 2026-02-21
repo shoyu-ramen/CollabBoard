@@ -14,11 +14,14 @@ const EXPECTED_TOOL_NAMES = [
   'deleteObject',
   'createTemplate',
   'getBoardState',
+  'organizeBoard',
+  'summarizeBoard',
+  'generateFlowchart',
 ];
 
 describe('AI_TOOLS schema', () => {
-  it('has exactly 12 tools', () => {
-    expect(AI_TOOLS).toHaveLength(12);
+  it('has exactly 15 tools', () => {
+    expect(AI_TOOLS).toHaveLength(15);
   });
 
   it('contains all expected tool names', () => {
@@ -100,5 +103,20 @@ describe('AI_TOOLS schema', () => {
   it('getBoardState has no required fields', () => {
     const tool = AI_TOOLS.find((t) => t.name === 'getBoardState');
     expect(tool!.input_schema.required).toBeUndefined();
+  });
+
+  it('organizeBoard requires []', () => {
+    const tool = AI_TOOLS.find((t) => t.name === 'organizeBoard');
+    expect(tool!.input_schema.required).toEqual([]);
+  });
+
+  it('summarizeBoard requires []', () => {
+    const tool = AI_TOOLS.find((t) => t.name === 'summarizeBoard');
+    expect(tool!.input_schema.required).toEqual([]);
+  });
+
+  it('generateFlowchart requires ["description"]', () => {
+    const tool = AI_TOOLS.find((t) => t.name === 'generateFlowchart');
+    expect(tool!.input_schema.required).toEqual(['description']);
   });
 });
