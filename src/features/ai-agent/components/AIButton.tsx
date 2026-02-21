@@ -11,7 +11,7 @@ export function AIButton({ onClick, isOpen }: AIButtonProps) {
   return (
     <button
       onClick={onClick}
-      className="fixed bottom-16 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--system-blue)] text-white shadow-lg transition-all hig-pressable sm:bottom-6 sm:right-6 sm:h-14 sm:w-14"
+      className="fixed bottom-16 left-4 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--system-blue)] text-white shadow-lg transition-all hig-pressable sm:bottom-16 sm:left-4 sm:h-14 sm:w-14"
       title="Open AI Assistant"
     >
       <svg

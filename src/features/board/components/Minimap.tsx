@@ -21,6 +21,7 @@ const RENDER_THROTTLE_MS = 100; // re-render at most every 100ms
 interface MinimapProps {
   onlineUsers: PresenceUser[];
   currentUserId: string | null;
+  onBreakFollow?: () => void;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -95,7 +96,7 @@ function getObjectColor(obj: WhiteboardObject): string {
 
 // ── Component ────────────────────────────────────────────────────
 
-export function Minimap({ onlineUsers, currentUserId }: MinimapProps) {
+export function Minimap({ onlineUsers, currentUserId, onBreakFollow }: MinimapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const renderScheduledRef = useRef(false);
   const isDraggingRef = useRef(false);
@@ -284,6 +285,8 @@ export function Minimap({ onlineUsers, currentUserId }: MinimapProps) {
   // ── Click-to-navigate ──────────────────────────────────────────
   const handleMinimapInteraction = useCallback(
     (clientX: number, clientY: number) => {
+      onBreakFollow?.();
+
       const canvas = canvasRef.current;
       if (!canvas) return;
 
@@ -314,7 +317,7 @@ export function Minimap({ onlineUsers, currentUserId }: MinimapProps) {
 
       useCanvas.getState().setPanOffset({ x: newPanX, y: newPanY });
     },
-    []
+    [onBreakFollow]
   );
 
   const handleMouseDown = useCallback(
@@ -349,17 +352,30 @@ export function Minimap({ onlineUsers, currentUserId }: MinimapProps) {
     return () => window.removeEventListener('mouseup', onUp);
   }, []);
 
+  // Toggle with M key
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (e.key === 'm' || e.key === 'M') {
+        setCollapsed((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
+
   if (collapsed) {
     return (
       <button
         onClick={() => setCollapsed(false)}
-        className="hidden md:flex fixed bottom-4 right-4 z-50 items-center justify-center h-9 w-9 rounded-lg bg-slate-900/85 border border-slate-700/50 text-slate-400 hover:text-slate-200 transition-colors"
-        title="Show minimap"
+        className="hidden md:flex fixed bottom-4 right-4 z-50 items-center justify-center h-10 w-10 rounded-full bg-[var(--fill-tertiary)] border border-[var(--separator)] text-[var(--label-secondary)] shadow-lg hover:opacity-80 transition-colors"
+        title="Show minimap (M)"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
-          width="16"
-          height="16"
+          width="18"
+          height="18"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -386,8 +402,8 @@ export function Minimap({ onlineUsers, currentUserId }: MinimapProps) {
           e.stopPropagation();
           setCollapsed(true);
         }}
-        className="absolute -top-2 -right-2 z-10 flex items-center justify-center h-5 w-5 rounded-full bg-slate-700 border border-slate-600 text-slate-400 hover:text-slate-200 hover:bg-slate-600 transition-colors"
-        title="Hide minimap"
+        className="absolute -top-2 -right-2 z-10 flex items-center justify-center h-5 w-5 rounded-full bg-[var(--fill-tertiary)] border border-[var(--separator)] text-[var(--label-secondary)] hover:opacity-80 transition-colors"
+        title="Hide minimap (M)"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"

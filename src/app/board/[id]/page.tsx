@@ -273,7 +273,7 @@ export default function BoardPage({
         />
       )}
       <AIChatPanel boardId={boardId} isOpen={aiPanelOpen} onClose={() => setAiPanelOpen(false)} />
-      <Minimap onlineUsers={onlineUsers} currentUserId={userId} />
+      <Minimap onlineUsers={onlineUsers} currentUserId={userId} onBreakFollow={breakFollow} />
       <FollowBanner currentUserId={userId} currentUserName={userName} />
       {/* Connection status banner */}
       {(connectionStatus === 'disconnected' || connectionStatus === 'reconnecting') && !loading && (
