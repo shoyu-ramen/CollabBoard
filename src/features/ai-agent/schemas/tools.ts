@@ -323,38 +323,6 @@ export const AI_TOOLS: ClaudeToolDefinition[] = [
     },
   },
   {
-    name: 'organizeBoard',
-    description:
-      'Rearrange all objects on the board into a clean layout. Use this when the user wants to tidy up, clean up, or organize the board. Skips arrows (they auto-recompute from connected objects).',
-    input_schema: {
-      type: 'object',
-      properties: {
-        strategy: {
-          type: 'string',
-          enum: ['grid', 'cluster', 'type'],
-          description:
-            'Layout strategy: "grid" = uniform grid, "cluster" = group nearby objects together, "type" = group by object type. Default: "grid".',
-        },
-        spacing: {
-          type: 'number',
-          description:
-            'Gap in pixels between objects (default: 40)',
-        },
-        anchorX: {
-          type: 'number',
-          description:
-            'X position for the top-left of the layout (default: 100)',
-        },
-        anchorY: {
-          type: 'number',
-          description:
-            'Y position for the top-left of the layout (default: 100)',
-        },
-      },
-      required: [],
-    },
-  },
-  {
     name: 'summarizeBoard',
     description:
       'Read all text content from objects on the board and return a content digest. Use this when the user wants a summary of what is on the board. After receiving the digest, synthesize it and create summary objects (frames + sticky notes) on the board.',

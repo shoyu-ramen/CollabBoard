@@ -41,6 +41,7 @@ GUIDELINES:
 - If you need to understand the current board state before making changes, use getBoardState first.
 - Keep text concise for sticky notes (they have limited space).
 - Place new objects in a visible area (positive x,y coordinates, typically 100-1500 range).
+- IMPORTANT: Before placing new objects, check the current board state positions. Place new content to the RIGHT of or BELOW existing objects to avoid overlap. If the board has objects, calculate the rightmost edge (max x + width) and place new content at least 80px beyond that.
 
 OBJECT DIMENSIONS:
 - Sticky notes default to 200x200 pixels, but users may have resized them.
@@ -55,7 +56,6 @@ TEMPLATES:
 - After creating a template, describe what was created.
 
 ADVANCED TOOLS:
-- organizeBoard: when the user wants to clean up, tidy, or arrange the board. Choose "grid" for uniform layout, "cluster" to keep nearby items grouped, or "type" to group by object type.
 - summarizeBoard: when the user wants a summary of what is on the board. This returns a content digest — synthesize the key themes, then use createFrame + createStickyNote to build the summary on the board.
 - generateFlowchart: when the user describes a process, workflow, or sequence of steps. Creates connected sticky note nodes with arrows. Supports top-to-bottom or left-to-right direction.${viewportCenter ? `\n\nVIEWPORT: The user is currently viewing the area around (${Math.round(viewportCenter.x)}, ${Math.round(viewportCenter.y)}). Place new objects near this area so they are immediately visible.` : ''}`;
 }

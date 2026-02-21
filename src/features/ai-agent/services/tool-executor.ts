@@ -66,168 +66,6 @@ export function getAnchorPosition(
   }
 }
 
-// --- Layout algorithm types & pure functions ---
-
-interface LayoutItem {
-  id: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  object_type: string;
-}
-
-interface LayoutPosition {
-  id: string;
-  x: number;
-  y: number;
-}
-
-/**
- * Arrange items in a uniform grid layout.
- * Uses sqrt(n) columns with uniform cell size based on the largest item.
- */
-export function computeGridLayout(
-  items: LayoutItem[],
-  anchorX: number,
-  anchorY: number,
-  spacing: number
-): LayoutPosition[] {
-  if (items.length === 0) return [];
-
-  const cols = Math.max(1, Math.ceil(Math.sqrt(items.length)));
-  const maxW = Math.max(...items.map((i) => i.width));
-  const maxH = Math.max(...items.map((i) => i.height));
-  const cellW = maxW + spacing;
-  const cellH = maxH + spacing;
-
-  return items.map((item, idx) => ({
-    id: item.id,
-    x: anchorX + (idx % cols) * cellW,
-    y: anchorY + Math.floor(idx / cols) * cellH,
-  }));
-}
-
-/**
- * Union-find clustering: group items within a proximity threshold,
- * then arrange each cluster internally as a grid, and arrange
- * clusters in a meta-grid.
- */
-export function computeClusterLayout(
-  items: LayoutItem[],
-  anchorX: number,
-  anchorY: number,
-  spacing: number
-): LayoutPosition[] {
-  if (items.length === 0) return [];
-
-  const THRESHOLD = 300;
-
-  // Union-find
-  const parent = items.map((_, i) => i);
-  function find(a: number): number {
-    while (parent[a] !== a) {
-      parent[a] = parent[parent[a]];
-      a = parent[a];
-    }
-    return a;
-  }
-  function union(a: number, b: number) {
-    parent[find(a)] = find(b);
-  }
-
-  // Cluster items by proximity (center-to-center distance)
-  for (let i = 0; i < items.length; i++) {
-    for (let j = i + 1; j < items.length; j++) {
-      const cx1 = items[i].x + items[i].width / 2;
-      const cy1 = items[i].y + items[i].height / 2;
-      const cx2 = items[j].x + items[j].width / 2;
-      const cy2 = items[j].y + items[j].height / 2;
-      const dist = Math.sqrt((cx1 - cx2) ** 2 + (cy1 - cy2) ** 2);
-      if (dist < THRESHOLD) union(i, j);
-    }
-  }
-
-  // Group by cluster
-  const clusters = new Map<number, LayoutItem[]>();
-  items.forEach((item, i) => {
-    const root = find(i);
-    if (!clusters.has(root)) clusters.set(root, []);
-    clusters.get(root)!.push(item);
-  });
-
-  const clusterArrays = Array.from(clusters.values());
-  const metaCols = Math.max(1, Math.ceil(Math.sqrt(clusterArrays.length)));
-  const result: LayoutPosition[] = [];
-  const clusterSpacing = spacing * 3;
-
-  let metaX = anchorX;
-  let metaY = anchorY;
-  let rowMaxH = 0;
-
-  clusterArrays.forEach((cluster, ci) => {
-    // Lay out each cluster internally as a grid
-    const positions = computeGridLayout(cluster, metaX, metaY, spacing);
-    result.push(...positions);
-
-    // Compute bounding box of this cluster
-    const clusterMaxW = Math.max(...cluster.map((i) => i.width));
-    const clusterMaxH = Math.max(...cluster.map((i) => i.height));
-    const cols = Math.max(1, Math.ceil(Math.sqrt(cluster.length)));
-    const rows = Math.ceil(cluster.length / cols);
-    const bboxW = cols * (clusterMaxW + spacing);
-    const bboxH = rows * (clusterMaxH + spacing);
-
-    rowMaxH = Math.max(rowMaxH, bboxH);
-
-    if ((ci + 1) % metaCols === 0) {
-      metaX = anchorX;
-      metaY += rowMaxH + clusterSpacing;
-      rowMaxH = 0;
-    } else {
-      metaX += bboxW + clusterSpacing;
-    }
-  });
-
-  return result;
-}
-
-/**
- * Group items by object_type, lay out each group in its own vertical section.
- */
-export function computeTypeLayout(
-  items: LayoutItem[],
-  anchorX: number,
-  anchorY: number,
-  spacing: number
-): LayoutPosition[] {
-  if (items.length === 0) return [];
-
-  // Group by type
-  const groups = new Map<string, LayoutItem[]>();
-  for (const item of items) {
-    if (!groups.has(item.object_type)) groups.set(item.object_type, []);
-    groups.get(item.object_type)!.push(item);
-  }
-
-  const result: LayoutPosition[] = [];
-  let sectionX = anchorX;
-
-  for (const [, groupItems] of groups) {
-    const maxW = Math.max(...groupItems.map((i) => i.width));
-    let curY = anchorY;
-
-    for (const item of groupItems) {
-      result.push({ id: item.id, x: sectionX, y: curY });
-      curY += item.height + spacing;
-    }
-
-    sectionX += maxW + spacing * 3;
-  }
-
-  return result;
-}
-
 /**
  * Parse a process description into individual step strings.
  */
@@ -269,6 +107,29 @@ export function parseFlowchartSteps(description: string): string[] {
 
   // Single item or unparseable
   return description.trim() ? [description.trim()] : [];
+}
+
+/**
+ * Find the right edge of all existing objects on the board.
+ * Returns an x position with padding so new content doesn't overlap.
+ */
+async function findOpenX(
+  boardId: string,
+  gap = 80
+): Promise<number> {
+  const supabase = await createServiceClient();
+  const { data } = await supabase
+    .from('whiteboard_objects')
+    .select('x, width')
+    .eq('board_id', boardId);
+
+  if (!data || data.length === 0) return 100;
+
+  const maxRight = data.reduce((max, obj) => {
+    return Math.max(max, (obj.x as number) + (obj.width as number));
+  }, 0);
+
+  return maxRight + gap;
 }
 
 interface InsertObject {
@@ -865,7 +726,8 @@ async function executeToolInner(
 
     case 'createTemplate': {
       const templateType = (input.type as string) || '';
-      const baseX = (input.x as number) ?? 100;
+      const baseX =
+        input.x != null ? (input.x as number) : await findOpenX(boardId);
       const baseY = (input.y as number) ?? 100;
       const customTitle = input.title as string | undefined;
 
@@ -945,194 +807,6 @@ async function executeToolInner(
         toolName,
         input,
         result: JSON.stringify(summary, null, 2),
-      };
-    }
-
-    case 'organizeBoard': {
-      const strategy = (input.strategy as string) || 'grid';
-      const spacing = (input.spacing as number) ?? 40;
-      const anchorX = (input.anchorX as number) ?? 100;
-      const anchorY = (input.anchorY as number) ?? 100;
-
-      const { data, error } = await supabase
-        .from('whiteboard_objects')
-        .select('id, object_type, x, y, width, height')
-        .eq('board_id', boardId);
-
-      if (error) {
-        return {
-          toolName,
-          input,
-          result: `Error fetching board objects: ${error.message}`,
-        };
-      }
-
-      // Filter out arrows (they auto-recompute from connected objects)
-      const movable = (data || []).filter(
-        (obj) => obj.object_type !== 'arrow'
-      ) as LayoutItem[];
-
-      if (movable.length === 0) {
-        return {
-          toolName,
-          input,
-          result:
-            'Nothing to organize — the board has no movable objects (arrows are skipped).',
-        };
-      }
-
-      let positions: LayoutPosition[];
-      switch (strategy) {
-        case 'cluster':
-          positions = computeClusterLayout(
-            movable,
-            anchorX,
-            anchorY,
-            spacing
-          );
-          break;
-        case 'type':
-          positions = computeTypeLayout(
-            movable,
-            anchorX,
-            anchorY,
-            spacing
-          );
-          break;
-        default:
-          positions = computeGridLayout(
-            movable,
-            anchorX,
-            anchorY,
-            spacing
-          );
-      }
-
-      // Batch-update positions for movable objects
-      const now = new Date().toISOString();
-      await Promise.all(
-        positions.map((pos) =>
-          supabase
-            .from('whiteboard_objects')
-            .update({
-              x: pos.x,
-              y: pos.y,
-              updated_by: userId,
-              updated_at: now,
-            })
-            .eq('id', pos.id)
-            .eq('board_id', boardId)
-        )
-      );
-
-      // Recompute arrow positions based on their connected objects' new locations
-      const arrows = (data || []).filter(
-        (obj) => obj.object_type === 'arrow'
-      );
-      if (arrows.length > 0) {
-        // Build a lookup of new positions (id -> { x, y, width, height })
-        const posMap = new Map<
-          string,
-          { x: number; y: number; width: number; height: number }
-        >();
-        for (const item of movable) {
-          const newPos = positions.find((p) => p.id === item.id);
-          posMap.set(item.id, {
-            x: newPos?.x ?? item.x,
-            y: newPos?.y ?? item.y,
-            width: item.width,
-            height: item.height,
-          });
-        }
-
-        // Fetch arrow properties to get connection info
-        const arrowIds = arrows.map((a) => a.id);
-        const { data: arrowData } = await supabase
-          .from('whiteboard_objects')
-          .select('id, x, y, width, height, properties')
-          .in('id', arrowIds);
-
-        if (arrowData) {
-          await Promise.all(
-            arrowData.map((arrow) => {
-              const props = arrow.properties as Record<string, unknown>;
-              const startObjId = props?.startObjectId as
-                | string
-                | undefined;
-              const endObjId = props?.endObjectId as
-                | string
-                | undefined;
-
-              if (!startObjId || !endObjId) return Promise.resolve();
-
-              const startObj = posMap.get(startObjId);
-              const endObj = posMap.get(endObjId);
-              if (!startObj || !endObj) return Promise.resolve();
-
-              // Auto-compute best anchor sides based on relative position
-              const sCx = startObj.x + startObj.width / 2;
-              const sCy = startObj.y + startObj.height / 2;
-              const eCx = endObj.x + endObj.width / 2;
-              const eCy = endObj.y + endObj.height / 2;
-              const absDx = Math.abs(eCx - sCx);
-              const absDy = Math.abs(eCy - sCy);
-
-              let fromSide: string;
-              let toSide: string;
-              if (absDx >= absDy) {
-                // Horizontal: use right→left or left→right
-                fromSide = eCx >= sCx ? 'right-50' : 'left-50';
-                toSide = eCx >= sCx ? 'left-50' : 'right-50';
-              } else {
-                // Vertical: use bottom→top or top→bottom
-                fromSide = eCy >= sCy ? 'bottom-50' : 'top-50';
-                toSide = eCy >= sCy ? 'top-50' : 'bottom-50';
-              }
-
-              const fromAnchor = getAnchorPosition(
-                startObj.x,
-                startObj.y,
-                startObj.width,
-                startObj.height,
-                fromSide
-              );
-              const toAnchor = getAnchorPosition(
-                endObj.x,
-                endObj.y,
-                endObj.width,
-                endObj.height,
-                toSide
-              );
-              const dx = toAnchor.x - fromAnchor.x;
-              const dy = toAnchor.y - fromAnchor.y;
-
-              return supabase
-                .from('whiteboard_objects')
-                .update({
-                  x: fromAnchor.x,
-                  y: fromAnchor.y,
-                  width: dx,
-                  height: dy,
-                  properties: {
-                    ...props,
-                    points: [0, 0, dx, dy],
-                    startAnchorSide: fromSide,
-                    endAnchorSide: toSide,
-                  },
-                  updated_by: userId,
-                  updated_at: now,
-                })
-                .eq('id', arrow.id)
-                .eq('board_id', boardId);
-            })
-          );
-        }
-      }
-
-      return {
-        toolName,
-        input,
-        result: `Organized ${movable.length} objects using "${strategy}" layout. ${arrows.length > 0 ? `Repositioned ${arrows.length} arrows to follow their connected objects.` : ''}`,
       };
     }
 
@@ -1305,7 +979,8 @@ async function executeToolInner(
       const description = (input.description as string) || '';
       const direction =
         (input.direction as string) || 'top-to-bottom';
-      const startX = (input.x as number) ?? 100;
+      const startX =
+        input.x != null ? (input.x as number) : await findOpenX(boardId);
       const startY = (input.y as number) ?? 100;
       const nodeColor = (input.nodeColor as string) ?? '#BFDBFE';
 

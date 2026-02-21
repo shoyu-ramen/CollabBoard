@@ -48,8 +48,6 @@ function formatToolCallLabel(toolCall: ToolCallResult): string {
       return `Created ${(input.type as string) || ''} template`;
     case 'createText':
       return `Created text "${(input.text as string)?.slice(0, 30) || ''}${((input.text as string)?.length || 0) > 30 ? '...' : ''}"`;
-    case 'organizeBoard':
-      return `Organized board (${(input.strategy as string) || 'grid'} layout)`;
     case 'summarizeBoard':
       return `Created board summary`;
     case 'generateFlowchart':
