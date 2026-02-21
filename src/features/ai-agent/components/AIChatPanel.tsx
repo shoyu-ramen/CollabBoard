@@ -206,9 +206,9 @@ export function AIChatPanel({ boardId, isOpen, onClose }: AIChatPanelProps) {
             </p>
             <div className="mt-4 flex flex-col gap-2">
               {[
-                'Organize this board into a grid',
-                'Summarize everything on the board',
-                'Create a flowchart for user signup',
+                'Create a SWOT analysis template',
+                'Add 3 sticky notes for brainstorming',
+                'Create a Kanban board layout',
               ].map((suggestion) => (
                 <button
                   key={suggestion}
