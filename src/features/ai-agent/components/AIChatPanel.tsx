@@ -211,8 +211,7 @@ export function AIChatPanel({ boardId, isOpen, onClose }: AIChatPanelProps) {
                 <button
                   key={suggestion}
                   onClick={() => {
-                    setInput(suggestion);
-                    inputRef.current?.focus();
+                    sendMessage(suggestion);
                   }}
                   className="hig-rounded-xl bg-[var(--fill-quaternary)] px-3 py-2 text-xs text-[var(--label-secondary)] hig-pressable min-h-[44px]"
                 >
