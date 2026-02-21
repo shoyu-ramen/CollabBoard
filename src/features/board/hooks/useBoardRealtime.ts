@@ -9,7 +9,8 @@ import {
   getConnectedArrows,
   computeArrowEndpoints,
 } from '../utils/connector.utils';
-import type { WhiteboardObject, PresenceUser, CursorPosition } from '../types';
+import { useFollowMode } from './useFollowMode';
+import type { WhiteboardObject, PresenceUser, CursorPosition, ViewportData } from '../types';
 import type {
   RealtimeChannel,
   RealtimePostgresChangesPayload,
@@ -378,7 +379,45 @@ export function useBoardRealtime({
       }
     );
 
-    // --- Presence leave (immediate cursor cleanup) ---
+    // --- Viewport broadcast (for follow mode) ---
+    liveChannel.on('broadcast', { event: 'viewport' }, ({ payload }) => {
+      const { userId: senderId, zoom, panOffsetX, panOffsetY, timestamp } =
+        payload as { userId: string } & ViewportData;
+      if (senderId === userId) return;
+      useFollowMode
+        .getState()
+        .updateRemoteViewport(senderId, {
+          zoom,
+          panOffsetX,
+          panOffsetY,
+          timestamp,
+        });
+    });
+
+    // --- Spotlight broadcast ---
+    liveChannel.on('broadcast', { event: 'spotlight' }, ({ payload }) => {
+      const { action, userId: senderId, userName: senderName } = payload as {
+        action: 'start' | 'stop';
+        userId: string;
+        userName: string;
+      };
+      const followStore = useFollowMode.getState();
+      if (action === 'start') {
+        followStore.startSpotlight(senderId, senderName);
+        // Auto-follow the presenter unless opted out
+        if (!followStore.spotlightOptedOut) {
+          followStore.startFollowing(senderId, senderName);
+        }
+      } else {
+        // Stop following if we were following the presenter
+        if (followStore.followingUserId === senderId) {
+          followStore.stopFollowing();
+        }
+        followStore.stopSpotlight();
+      }
+    });
+
+    // --- Presence leave (immediate cursor + follow/spotlight cleanup) ---
     liveChannel.on('presence', { event: 'leave' }, ({ leftPresences }) => {
       const left = leftPresences as unknown as Array<{ userId: string }>;
       if (left.length === 0) return;
@@ -391,6 +430,18 @@ export function useBoardRealtime({
         }
         return changed ? next : prev;
       });
+
+      // Clean up follow/spotlight state for departed users
+      const followStore = useFollowMode.getState();
+      for (const id of leftIds) {
+        followStore.removeRemoteViewport(id);
+        if (followStore.followingUserId === id) {
+          followStore.stopFollowing();
+        }
+        if (followStore.spotlightUserId === id) {
+          followStore.stopSpotlight();
+        }
+      }
     });
 
     // --- Presence sync ---

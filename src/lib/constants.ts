@@ -57,6 +57,12 @@ export const MAX_OBJECTS = 5000;
 export const AI_RATE_LIMIT_PER_MINUTE = 10;
 export const AI_MODEL = 'claude-sonnet-4-6';
 
+// Follow / Spotlight
+export const VIEWPORT_BROADCAST_THROTTLE_MS = 16;
+export const VIEWPORT_LERP_SPEED = 0.12;
+export const PAN_SNAP_THRESHOLD = 0.5;
+export const ZOOM_SNAP_THRESHOLD = 0.001;
+
 // Real-time
 export const REALTIME_CHANNEL_PREFIX = 'board:';
 export const PRESENCE_CHANNEL_PREFIX = 'presence:';

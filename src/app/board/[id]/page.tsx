@@ -8,6 +8,8 @@ import { createClient } from '@/lib/supabase/client';
 import Toolbar from '@/features/board/components/Toolbar';
 import PropertiesPanel from '@/features/board/components/PropertiesPanel';
 import { PresenceIndicator } from '@/features/board/components/PresenceIndicator';
+import { FollowBanner } from '@/features/board/components/FollowBanner';
+import { useFollowViewport } from '@/features/board/hooks/useFollowViewport';
 import { MemberManagementModal } from '@/features/board/components/MemberManagementModal';
 import { AIButton } from '@/features/ai-agent/components/AIButton';
 import { AIChatPanel } from '@/features/ai-agent/components/AIChatPanel';
@@ -138,6 +140,9 @@ export default function BoardPage({
     return () => window.removeEventListener('keydown', handleKey);
   }, []);
 
+  // Follow / spotlight mode
+  const { breakFollow } = useFollowViewport(userId);
+
   // Canvas state for cursor coordinate conversion
   const zoom = useCanvas((s) => s.zoom);
   const panOffset = useCanvas((s) => s.panOffset);
@@ -217,6 +222,7 @@ export default function BoardPage({
       <Canvas
         remoteCursors={remoteCursors}
         CursorOverlayComponent={CursorOverlayDynamic}
+        onBreakFollow={breakFollow}
       />
       <FloatingActionBar />
       <Link
@@ -245,7 +251,11 @@ export default function BoardPage({
             </svg>
           </button>
         )}
-        <PresenceIndicator users={onlineUsers} />
+        <PresenceIndicator
+          users={onlineUsers}
+          currentUserId={userId}
+          currentUserName={userName}
+        />
       </div>
       {isBoardOwner && boardVisibility === 'private' && (
         <MemberManagementModal
@@ -262,6 +272,7 @@ export default function BoardPage({
         />
       )}
       <AIChatPanel boardId={boardId} isOpen={aiPanelOpen} onClose={() => setAiPanelOpen(false)} />
+      <FollowBanner currentUserId={userId} currentUserName={userName} />
       {/* Connection status banner */}
       {(connectionStatus === 'disconnected' || connectionStatus === 'reconnecting') && !loading && (
         <div className="absolute top-14 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 hig-material-regular hig-rounded-md border border-[var(--separator)] px-3 py-1.5 shadow-md sm:top-4 sm:px-4 sm:py-2">

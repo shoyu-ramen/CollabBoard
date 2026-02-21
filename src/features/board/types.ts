@@ -91,6 +91,13 @@ export interface HistoryEntry {
   after: Map<string, WhiteboardObject | null>; // null = object was deleted
 }
 
+export interface ViewportData {
+  zoom: number;
+  panOffsetX: number;
+  panOffsetY: number;
+  timestamp: number;
+}
+
 // Tool for canvas operations
 export type ToolType =
   | 'select'

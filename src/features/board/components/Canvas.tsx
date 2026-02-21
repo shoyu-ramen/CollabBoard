@@ -126,11 +126,13 @@ interface CanvasProps {
   CursorOverlayComponent?: React.ComponentType<{
     remoteCursors: Map<string, CursorPosition>;
   }>;
+  onBreakFollow?: () => void;
 }
 
 export default function Canvas({
   remoteCursors,
   CursorOverlayComponent,
+  onBreakFollow,
 }: CanvasProps) {
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';
@@ -428,6 +430,7 @@ export default function Canvas({
   const handleWheel = useCallback(
     (e: Konva.KonvaEventObject<WheelEvent>) => {
       e.evt.preventDefault();
+      onBreakFollow?.();
       const stage = stageRef.current;
       if (!stage) return;
 
@@ -436,7 +439,7 @@ export default function Canvas({
 
       zoomToPoint(pointer, e.evt.deltaY);
     },
-    [zoomToPoint]
+    [zoomToPoint, onBreakFollow]
   );
 
   const isCreationTool =
@@ -1344,8 +1347,11 @@ export default function Canvas({
   // Broadcast position during drag for real-time sync (no DB write)
   const handleDragMove = useCallback(
     (e: Konva.KonvaEventObject<DragEvent>) => {
-      // Only broadcast shape drags, not stage panning
-      if (e.target === stageRef.current) return;
+      // Stage panning: update Zustand live so viewport broadcasts fire
+      if (e.target === stageRef.current) {
+        useCanvas.getState().setPanOffset({ x: e.target.x(), y: e.target.y() });
+        return;
+      }
 
       // Clear anchor hover dots when dragging a shape
       setHoveredObjectId(null);
@@ -2039,9 +2045,10 @@ export default function Canvas({
   const handleStageDragEnd = useCallback(
     (e: Konva.KonvaEventObject<DragEvent>) => {
       if (e.target !== stageRef.current) return;
+      onBreakFollow?.();
       setPanOffset({ x: e.target.x(), y: e.target.y() });
     },
-    [setPanOffset]
+    [setPanOffset, onBreakFollow]
   );
 
   // Viewport culling
