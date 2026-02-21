@@ -300,6 +300,23 @@ export default function Canvas({
         return;
       }
 
+      // Undo: Cmd/Ctrl+Z
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        useBoardObjects.getState().undo();
+        return;
+      }
+
+      // Redo: Cmd/Ctrl+Shift+Z or Cmd/Ctrl+Y
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        ((e.key === 'z' && e.shiftKey) || e.key === 'y')
+      ) {
+        e.preventDefault();
+        useBoardObjects.getState().redo();
+        return;
+      }
+
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         deleteSelected();
@@ -310,6 +327,10 @@ export default function Canvas({
         // Duplicate selected and select the new objects
         const state = useBoardObjects.getState();
         const newIds = new Set<string>();
+        state._suppressHistory = true;
+        useBoardObjects.setState({ _suppressHistory: true });
+        const beforeSnaps = new Map<string, WhiteboardObject | null>();
+        const afterSnaps = new Map<string, WhiteboardObject | null>();
         state.selectedIds.forEach((id) => {
           const obj = state.objects.get(id);
           if (obj) {
@@ -324,10 +345,21 @@ export default function Canvas({
             };
             addObject(newObj);
             newIds.add(newObj.id);
+            beforeSnaps.set(newObj.id, null);
+            afterSnaps.set(newObj.id, { ...newObj });
           }
         });
+        useBoardObjects.setState({ _suppressHistory: false });
         if (newIds.size > 0) {
           useBoardObjects.getState().setSelectedIds(newIds);
+          // Push single grouped history entry for all duplicated objects
+          useBoardObjects.getState().pushHistory({
+            id: uuidv4(),
+            label: 'duplicate',
+            timestamp: Date.now(),
+            before: beforeSnaps,
+            after: afterSnaps,
+          });
         }
       }
 
@@ -1166,6 +1198,7 @@ export default function Canvas({
   // Handle drag of shapes
   const handleDragEnd = useCallback(
     (id: string, x: number, y: number) => {
+      useBoardObjects.getState().beginHistoryBatch('move');
       const state = useBoardObjects.getState();
       const obj = state.objects.get(id);
       const wasGroupDrag = groupDragOriginals.current !== null;
@@ -1302,6 +1335,8 @@ export default function Canvas({
           }
         });
       }
+
+      useBoardObjects.getState().commitHistoryBatch();
     },
     [updateObject]
   );
@@ -1937,6 +1972,7 @@ export default function Canvas({
       attrs: { x: number; y: number; width: number; height: number; rotation: number },
       scale: { scaleX: number; scaleY: number }
     ) => {
+      useBoardObjects.getState().beginHistoryBatch('resize/rotate');
       // Clear live transform visual overrides
       setTransformConnections(null);
       setTransformArrowEndpoints(null);
@@ -1993,6 +2029,8 @@ export default function Canvas({
           }
         }
       }
+
+      useBoardObjects.getState().commitHistoryBatch();
     },
     [updateObject]
   );

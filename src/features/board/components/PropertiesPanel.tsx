@@ -76,6 +76,7 @@ export default function PropertiesPanel() {
 
   const updateProperties = useCallback(
     (propUpdates: Partial<ObjectProperties>) => {
+      useBoardObjects.getState().beginHistoryBatch('property change');
       selectedObjects.forEach((obj) => {
         updateObject(obj.id, {
           properties: { ...obj.properties, ...propUpdates },
@@ -83,6 +84,7 @@ export default function PropertiesPanel() {
           version: (obj.version || 0) + 1,
         });
       });
+      useBoardObjects.getState().commitHistoryBatch();
     },
     [selectedObjects, updateObject]
   );

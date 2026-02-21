@@ -39,6 +39,8 @@ const shortcutGroups = [
   {
     title: 'General',
     shortcuts: [
+      { keys: [`${mod}+Z`], description: 'Undo' },
+      { keys: [`${mod}+Shift+Z`], description: 'Redo' },
       { keys: ['Esc'], description: 'Deselect / back to Select tool' },
       { keys: ['Delete', 'Backspace'], description: 'Delete selected' },
       { keys: [`${mod}+C`], description: 'Copy' },

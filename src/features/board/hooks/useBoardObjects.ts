@@ -4,7 +4,15 @@ import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { createClient } from '@/lib/supabase/client';
 import { broadcastToLiveChannel } from './useBoardRealtime';
-import type { WhiteboardObject, ToolType } from '../types';
+import type { WhiteboardObject, ToolType, HistoryEntry } from '../types';
+
+const MAX_HISTORY = 50;
+
+interface HistoryBatch {
+  label: string;
+  before: Map<string, WhiteboardObject | null>;
+  after: Map<string, WhiteboardObject | null>;
+}
 
 interface BoardObjectsState {
   objects: Map<string, WhiteboardObject>;
@@ -13,6 +21,12 @@ interface BoardObjectsState {
   boardId: string | null;
   userId: string | null;
   clipboard: WhiteboardObject[];
+
+  // Undo/Redo
+  undoStack: HistoryEntry[];
+  redoStack: HistoryEntry[];
+  _suppressHistory: boolean;
+  _historyBatch: HistoryBatch | null;
 
   // Board context
   setBoardContext: (boardId: string, userId: string) => void;
@@ -45,6 +59,14 @@ interface BoardObjectsState {
 
   // Bulk operations (state-only, used by realtime sync)
   deleteSelected: () => void;
+
+  // Undo/Redo actions
+  pushHistory: (entry: HistoryEntry) => void;
+  undo: () => void;
+  redo: () => void;
+  beginHistoryBatch: (label: string) => void;
+  commitHistoryBatch: () => void;
+  clearHistory: () => void;
 }
 
 export const useBoardObjects = create<BoardObjectsState>((set, get) => ({
@@ -54,8 +76,13 @@ export const useBoardObjects = create<BoardObjectsState>((set, get) => ({
   boardId: null,
   userId: null,
   clipboard: [],
+  undoStack: [],
+  redoStack: [],
+  _suppressHistory: false,
+  _historyBatch: null,
 
-  setBoardContext: (boardId, userId) => set({ boardId, userId }),
+  setBoardContext: (boardId, userId) =>
+    set({ boardId, userId, undoStack: [], redoStack: [] }),
 
   addObject: (obj) =>
     set((state) => {
@@ -118,10 +145,220 @@ export const useBoardObjects = create<BoardObjectsState>((set, get) => ({
       return { objects: next };
     }),
 
+  // --- Undo/Redo core actions ---
+
+  pushHistory: (entry) =>
+    set((state) => ({
+      undoStack: [...state.undoStack.slice(-(MAX_HISTORY - 1)), entry],
+      redoStack: [],
+    })),
+
+  undo: () => {
+    const { undoStack, userId } = get();
+    if (undoStack.length === 0) return;
+
+    const entry = undoStack[undoStack.length - 1];
+
+    // Apply before snapshots to restore previous state
+    set((state) => {
+      const next = new Map(state.objects);
+      entry.before.forEach((snapshot, id) => {
+        if (snapshot === null) {
+          // Object was created — undo means remove it
+          next.delete(id);
+        } else {
+          // Restore previous snapshot with bumped version for LWW
+          next.set(id, {
+            ...snapshot,
+            version: (next.get(id)?.version || snapshot.version) + 1,
+            updated_at: new Date().toISOString(),
+            updated_by: userId || snapshot.updated_by,
+          });
+        }
+      });
+
+      return {
+        objects: next,
+        undoStack: state.undoStack.slice(0, -1),
+        redoStack: [...state.redoStack, entry],
+      };
+    });
+
+    // Sync to other clients and DB
+    const state = get();
+    entry.before.forEach((snapshot, id) => {
+      if (snapshot === null) {
+        // Undo create → delete
+        broadcastToLiveChannel('object_delete', { id, senderId: userId });
+        const supabase = createClient();
+        supabase
+          .from('whiteboard_objects')
+          .delete()
+          .eq('id', id)
+          .then(({ error }) => {
+            if (error) console.error('Undo: failed to delete:', error);
+          });
+      } else {
+        const restored = state.objects.get(id);
+        if (restored) {
+          // Check if the object existed before the undo (update vs re-insert)
+          const afterSnapshot = entry.after.get(id);
+          if (afterSnapshot === null) {
+            // Undo delete → re-insert
+            broadcastToLiveChannel('object_create', {
+              object: restored,
+              senderId: userId,
+            });
+            const supabase = createClient();
+            supabase
+              .from('whiteboard_objects')
+              .insert(restored)
+              .then(({ error }) => {
+                if (error)
+                  console.error('Undo: failed to re-insert:', error);
+              });
+          } else {
+            // Undo update → restore previous values
+            broadcastToLiveChannel('object_update', {
+              object: restored,
+              senderId: userId,
+            });
+            const supabase = createClient();
+            supabase
+              .from('whiteboard_objects')
+              .update(restored)
+              .eq('id', id)
+              .then(({ error }) => {
+                if (error)
+                  console.error('Undo: failed to update:', error);
+              });
+          }
+        }
+      }
+    });
+  },
+
+  redo: () => {
+    const { redoStack, userId } = get();
+    if (redoStack.length === 0) return;
+
+    const entry = redoStack[redoStack.length - 1];
+
+    // Apply after snapshots to re-apply the action
+    set((state) => {
+      const next = new Map(state.objects);
+      entry.after.forEach((snapshot, id) => {
+        if (snapshot === null) {
+          // Object was deleted — redo means remove it again
+          next.delete(id);
+        } else {
+          next.set(id, {
+            ...snapshot,
+            version: (next.get(id)?.version || snapshot.version) + 1,
+            updated_at: new Date().toISOString(),
+            updated_by: userId || snapshot.updated_by,
+          });
+        }
+      });
+
+      return {
+        objects: next,
+        redoStack: state.redoStack.slice(0, -1),
+        undoStack: [...state.undoStack, entry],
+      };
+    });
+
+    // Sync to other clients and DB
+    const state = get();
+    entry.after.forEach((snapshot, id) => {
+      if (snapshot === null) {
+        // Redo delete
+        broadcastToLiveChannel('object_delete', { id, senderId: userId });
+        const supabase = createClient();
+        supabase
+          .from('whiteboard_objects')
+          .delete()
+          .eq('id', id)
+          .then(({ error }) => {
+            if (error) console.error('Redo: failed to delete:', error);
+          });
+      } else {
+        const restored = state.objects.get(id);
+        if (restored) {
+          const beforeSnapshot = entry.before.get(id);
+          if (beforeSnapshot === null) {
+            // Redo create → re-insert
+            broadcastToLiveChannel('object_create', {
+              object: restored,
+              senderId: userId,
+            });
+            const supabase = createClient();
+            supabase
+              .from('whiteboard_objects')
+              .insert(restored)
+              .then(({ error }) => {
+                if (error)
+                  console.error('Redo: failed to re-insert:', error);
+              });
+          } else {
+            // Redo update
+            broadcastToLiveChannel('object_update', {
+              object: restored,
+              senderId: userId,
+            });
+            const supabase = createClient();
+            supabase
+              .from('whiteboard_objects')
+              .update(restored)
+              .eq('id', id)
+              .then(({ error }) => {
+                if (error)
+                  console.error('Redo: failed to update:', error);
+              });
+          }
+        }
+      }
+    });
+  },
+
+  beginHistoryBatch: (label) => {
+    set({
+      _historyBatch: {
+        label,
+        before: new Map(),
+        after: new Map(),
+      },
+    });
+  },
+
+  commitHistoryBatch: () => {
+    const batch = get()._historyBatch;
+    if (!batch || batch.before.size === 0) {
+      set({ _historyBatch: null });
+      return;
+    }
+
+    const entry: HistoryEntry = {
+      id: uuidv4(),
+      label: batch.label,
+      timestamp: Date.now(),
+      before: batch.before,
+      after: batch.after,
+    };
+
+    set((state) => ({
+      _historyBatch: null,
+      undoStack: [...state.undoStack.slice(-(MAX_HISTORY - 1)), entry],
+      redoStack: [],
+    }));
+  },
+
+  clearHistory: () => set({ undoStack: [], redoStack: [] }),
+
   // --- Sync methods: optimistic local update + persist to Supabase ---
 
   addObjectSync: (obj) => {
-    const { boardId, userId } = get();
+    const { boardId, userId, _suppressHistory, _historyBatch } = get();
     const fullObj: WhiteboardObject = {
       ...obj,
       board_id: boardId || obj.board_id,
@@ -133,6 +370,26 @@ export const useBoardObjects = create<BoardObjectsState>((set, get) => ({
       next.set(fullObj.id, fullObj);
       return { objects: next };
     });
+
+    // Record history for create
+    if (!_suppressHistory) {
+      if (_historyBatch) {
+        // Accumulate into batch
+        if (!_historyBatch.before.has(fullObj.id)) {
+          _historyBatch.before.set(fullObj.id, null);
+        }
+        _historyBatch.after.set(fullObj.id, { ...fullObj });
+      } else {
+        const entry: HistoryEntry = {
+          id: uuidv4(),
+          label: 'create',
+          timestamp: Date.now(),
+          before: new Map([[fullObj.id, null]]),
+          after: new Map([[fullObj.id, { ...fullObj }]]),
+        };
+        get().pushHistory(entry);
+      }
+    }
 
     // Broadcast to other clients for real-time sync
     broadcastToLiveChannel('object_create', {
@@ -154,6 +411,27 @@ export const useBoardObjects = create<BoardObjectsState>((set, get) => ({
     if (!existing) return;
 
     const merged = { ...existing, ...updates };
+
+    // Record history for update
+    const { _suppressHistory, _historyBatch } = get();
+    if (!_suppressHistory) {
+      if (_historyBatch) {
+        // Only capture the first "before" for each ID in a batch
+        if (!_historyBatch.before.has(id)) {
+          _historyBatch.before.set(id, { ...existing });
+        }
+        _historyBatch.after.set(id, { ...merged });
+      } else {
+        const entry: HistoryEntry = {
+          id: uuidv4(),
+          label: 'update',
+          timestamp: Date.now(),
+          before: new Map([[id, { ...existing }]]),
+          after: new Map([[id, { ...merged }]]),
+        };
+        get().pushHistory(entry);
+      }
+    }
 
     set((state) => {
       const next = new Map(state.objects);
@@ -178,7 +456,28 @@ export const useBoardObjects = create<BoardObjectsState>((set, get) => ({
   },
 
   deleteObjectSync: (id) => {
+    const existing = get().objects.get(id);
     const senderId = get().userId;
+
+    // Record history for delete
+    if (existing && !get()._suppressHistory) {
+      const batch = get()._historyBatch;
+      if (batch) {
+        if (!batch.before.has(id)) {
+          batch.before.set(id, { ...existing });
+        }
+        batch.after.set(id, null);
+      } else {
+        const entry: HistoryEntry = {
+          id: uuidv4(),
+          label: 'delete',
+          timestamp: Date.now(),
+          before: new Map([[id, { ...existing }]]),
+          after: new Map([[id, null]]),
+        };
+        get().pushHistory(entry);
+      }
+    }
 
     set((state) => {
       const next = new Map(state.objects);
@@ -204,6 +503,29 @@ export const useBoardObjects = create<BoardObjectsState>((set, get) => ({
     const selected = [...get().selectedIds];
     if (selected.length === 0) return;
     const senderId = get().userId;
+
+    // Capture before-snapshots for all selected objects
+    if (!get()._suppressHistory) {
+      const before = new Map<string, WhiteboardObject | null>();
+      const after = new Map<string, WhiteboardObject | null>();
+      for (const id of selected) {
+        const obj = get().objects.get(id);
+        if (obj) {
+          before.set(id, { ...obj });
+          after.set(id, null);
+        }
+      }
+      if (before.size > 0) {
+        const entry: HistoryEntry = {
+          id: uuidv4(),
+          label: 'delete',
+          timestamp: Date.now(),
+          before,
+          after,
+        };
+        get().pushHistory(entry);
+      }
+    }
 
     set((state) => {
       const next = new Map(state.objects);
@@ -319,13 +641,31 @@ export const useBoardObjects = create<BoardObjectsState>((set, get) => ({
       }
     }
 
-    // Add all and select them
+    // Suppress individual history entries; push one grouped entry
+    set({ _suppressHistory: true });
     const newIds = new Set<string>();
     for (const obj of newObjects) {
       get().addObjectSync(obj);
       newIds.add(obj.id);
     }
-    set({ selectedIds: newIds });
+    set({ _suppressHistory: false, selectedIds: newIds });
+
+    // Push a single grouped history entry for the paste
+    const before = new Map<string, WhiteboardObject | null>();
+    const after = new Map<string, WhiteboardObject | null>();
+    for (const obj of newObjects) {
+      before.set(obj.id, null);
+      const inserted = get().objects.get(obj.id);
+      after.set(obj.id, inserted ? { ...inserted } : { ...obj });
+    }
+    const entry: HistoryEntry = {
+      id: uuidv4(),
+      label: 'paste',
+      timestamp: Date.now(),
+      before,
+      after,
+    };
+    get().pushHistory(entry);
   },
 
   deleteSelected: () =>

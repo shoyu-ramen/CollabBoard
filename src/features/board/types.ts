@@ -83,6 +83,14 @@ export interface PresenceUser {
   onlineAt: string;
 }
 
+export interface HistoryEntry {
+  id: string;
+  label: string;
+  timestamp: number;
+  before: Map<string, WhiteboardObject | null>; // null = object was created (didn't exist before)
+  after: Map<string, WhiteboardObject | null>; // null = object was deleted
+}
+
 // Tool for canvas operations
 export type ToolType =
   | 'select'
