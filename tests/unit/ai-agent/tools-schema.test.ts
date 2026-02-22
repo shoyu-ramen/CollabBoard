@@ -109,8 +109,8 @@ describe('AI_TOOLS schema', () => {
     expect(tool!.input_schema.required).toEqual([]);
   });
 
-  it('generateFlowchart requires ["description"]', () => {
+  it('generateFlowchart has no required fields (nodes+connections or description)', () => {
     const tool = AI_TOOLS.find((t) => t.name === 'generateFlowchart');
-    expect(tool!.input_schema.required).toEqual(['description']);
+    expect(tool!.input_schema.required).toEqual([]);
   });
 });
