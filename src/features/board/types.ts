@@ -43,6 +43,7 @@ export interface ObjectProperties {
   endObjectId?: string;
   startAnchorSide?: string;
   endAnchorSide?: string;
+  routing?: 'orthogonal';
   // Frame specific
   title?: string;
 }

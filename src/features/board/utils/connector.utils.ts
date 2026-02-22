@@ -307,6 +307,37 @@ export function computeArrowEndpoints(
   const dx = endX - startX;
   const dy = endY - startY;
 
+  // For orthogonal-routed arrows, recompute the L-shaped path
+  if (arrow.properties.routing === 'orthogonal') {
+    const fromEdge = (startAnchorSide as string) || '';
+    const toEdge = (endAnchorSide as string) || '';
+    const fromIsVertical = fromEdge.startsWith('top') || fromEdge.startsWith('bottom');
+    const toIsVertical = toEdge.startsWith('top') || toEdge.startsWith('bottom');
+
+    let orthoPoints: number[];
+    if (fromIsVertical && toIsVertical) {
+      // Both vertical exits (e.g. bottom→top same column) — straight line
+      orthoPoints = [0, 0, dx, dy];
+    } else if (!fromIsVertical && toIsVertical) {
+      // Side exit → top/bottom entry: horizontal first, then vertical
+      orthoPoints = [0, 0, dx, 0, dx, dy];
+    } else if (fromIsVertical && !toIsVertical) {
+      // Top/bottom exit → side entry: vertical first, then horizontal
+      orthoPoints = [0, 0, 0, dy, dx, dy];
+    } else {
+      // Both side exits: Z-shape through midpoint
+      orthoPoints = [0, 0, dx / 2, 0, dx / 2, dy, dx, dy];
+    }
+
+    return {
+      x: startX,
+      y: startY,
+      width: dx,
+      height: dy,
+      points: orthoPoints,
+    };
+  }
+
   return {
     x: startX,
     y: startY,

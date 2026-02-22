@@ -47,23 +47,24 @@ export function getAnchorPosition(
   height: number,
   side: string
 ): { x: number; y: number } {
-  switch (side) {
-    case 'top':
-    case 'top-50':
-      return { x: x + width / 2, y };
-    case 'right':
-    case 'right-50':
-      return { x: x + width, y: y + height / 2 };
-    case 'bottom':
-    case 'bottom-50':
-      return { x: x + width / 2, y: y + height };
-    case 'left':
-    case 'left-50':
-      return { x, y: y + height / 2 };
-    default:
-      // Default to center
-      return { x: x + width / 2, y: y + height / 2 };
+  // Parse side name: "top-25", "bottom-75", "left-50", etc.
+  const match = side.match(/^(top|right|bottom|left)(?:-(\d+))?$/);
+  if (match) {
+    const edge = match[1];
+    const pct = match[2] ? parseInt(match[2]) / 100 : 0.5;
+    switch (edge) {
+      case 'top':
+        return { x: x + width * pct, y };
+      case 'right':
+        return { x: x + width, y: y + height * pct };
+      case 'bottom':
+        return { x: x + width * pct, y: y + height };
+      case 'left':
+        return { x, y: y + height * pct };
+    }
   }
+  // Default to center
+  return { x: x + width / 2, y: y + height / 2 };
 }
 
 /**
@@ -1133,6 +1134,61 @@ async function executeToolInner(
           layers.get(l)!.push(n.id);
         }
 
+        // --- Barycenter crossing minimization ---
+        // Build parent/child adjacency for cross-layer connections
+        const nodeParents = new Map<string, string[]>();
+        const nodeChildren = new Map<string, string[]>();
+        for (const n of cappedNodes) {
+          nodeParents.set(n.id, []);
+          nodeChildren.set(n.id, []);
+        }
+        for (const c of forwardConnections) {
+          nodeChildren.get(c.from)!.push(c.to);
+          nodeParents.get(c.to)!.push(c.from);
+        }
+
+        // Get sorted layer keys
+        const layerKeys = Array.from(layers.keys())
+          .map(Number)
+          .sort((a, b) => a - b);
+
+        // Run 4 sweeps (down, up, down, up) to iteratively reduce crossings
+        for (let sweep = 0; sweep < 4; sweep++) {
+          const keys =
+            sweep % 2 === 0 ? layerKeys : [...layerKeys].reverse();
+          for (let li = 1; li < keys.length; li++) {
+            const currKey = String(keys[li]);
+            const prevKey = String(keys[li - 1]);
+            const prevOrder = layers.get(prevKey)!;
+            const prevPos = new Map<string, number>();
+            prevOrder.forEach((id, idx) => prevPos.set(id, idx));
+
+            const currNodes = layers.get(currKey)!;
+            // Compute barycenter: average position of neighbors in previous layer
+            const bary = new Map<string, number>();
+            for (const nid of currNodes) {
+              const neighbors =
+                sweep % 2 === 0
+                  ? nodeParents.get(nid)!
+                  : nodeChildren.get(nid)!;
+              const positions = neighbors
+                .filter((p) => prevPos.has(p))
+                .map((p) => prevPos.get(p)!);
+              if (positions.length > 0) {
+                bary.set(
+                  nid,
+                  positions.reduce((a, b) => a + b, 0) / positions.length
+                );
+              } else {
+                // Keep original relative position for disconnected nodes
+                bary.set(nid, currNodes.indexOf(nid));
+              }
+            }
+            // Sort current layer by barycenter
+            currNodes.sort((a, b) => bary.get(a)! - bary.get(b)!);
+          }
+        }
+
         // Calculate positions: center each layer's nodes
         const maxNodesInLayer = Math.max(
           ...Array.from(layers.values()).map((arr) => arr.length)
@@ -1276,9 +1332,9 @@ async function executeToolInner(
           );
         }
 
-        // Create arrows for forward connections only
+        // Create arrows for forward connections only with orthogonal routing.
         // Back-edges (loops to earlier nodes) are skipped to avoid
-        // lines crossing through other nodes and creating visual chaos
+        // lines crossing through other nodes and creating visual chaos.
         let arrowCount = 0;
         for (const conn of rawConnections) {
           const fromDbId = createdDbIds.get(conn.from);
@@ -1295,51 +1351,84 @@ async function executeToolInner(
           const fromShape = nodeShapes.get(conn.from)!;
           const toShape = nodeShapes.get(conn.to)!;
 
-          // Compute actual shape position (centered in cell)
+          // Compute actual shape center positions
+          const fromCX = fromPos.x + cellW / 2;
+          const fromCY = fromPos.y + cellH / 2;
+          const toCX = toPos.x + cellW / 2;
+          const toCY = toPos.y + cellH / 2;
+
+          // Compute shape bounding boxes (centered in cell)
           const fromShapeX = fromPos.x + (cellW - fromShape.w) / 2;
           const fromShapeY = fromPos.y + (cellH - fromShape.h) / 2;
           const toShapeX = toPos.x + (cellW - toShape.w) / 2;
           const toShapeY = toPos.y + (cellH - toShape.h) / 2;
 
-          // Determine anchor sides based on relative position
+          const dx = toCX - fromCX;
+          const dy = toCY - fromCY;
+
+          // Determine routing: anchor sides + orthogonal waypoints
           let fromSide: string;
           let toSide: string;
-          const dx = toPos.x - fromPos.x;
-          const dy = toPos.y - fromPos.y;
+          let waypoints: number[]; // relative to fromAnchor: [0,0, ...midpoints, endDx,endDy]
 
           if (isVertical) {
-            if (Math.abs(dy) >= Math.abs(dx)) {
-              fromSide = dy >= 0 ? 'bottom-50' : 'top-50';
-              toSide = dy >= 0 ? 'top-50' : 'bottom-50';
+            if (Math.abs(dx) < cellW / 4) {
+              // Same column — straight vertical: bottom → top
+              fromSide = 'bottom-50';
+              toSide = 'top-50';
+              const fromA = getAnchorPosition(fromShapeX, fromShapeY, fromShape.w, fromShape.h, fromSide);
+              const toA = getAnchorPosition(toShapeX, toShapeY, toShape.w, toShape.h, toSide);
+              const wdx = toA.x - fromA.x;
+              const wdy = toA.y - fromA.y;
+              waypoints = [0, 0, wdx, wdy];
+            } else if (Math.abs(dy) < cellH / 4) {
+              // Different column, same row — straight horizontal
+              fromSide = dx > 0 ? 'right-50' : 'left-50';
+              toSide = dx > 0 ? 'left-50' : 'right-50';
+              const fromA = getAnchorPosition(fromShapeX, fromShapeY, fromShape.w, fromShape.h, fromSide);
+              const toA = getAnchorPosition(toShapeX, toShapeY, toShape.w, toShape.h, toSide);
+              const wdx = toA.x - fromA.x;
+              const wdy = toA.y - fromA.y;
+              waypoints = [0, 0, wdx, wdy];
             } else {
-              fromSide = dx >= 0 ? 'right-50' : 'left-50';
-              toSide = dx >= 0 ? 'left-50' : 'right-50';
+              // Different column, different row — orthogonal L-route:
+              // Exit from side of source, go horizontal to align with target column,
+              // then go vertical to target's top anchor
+              fromSide = dx > 0 ? 'right-50' : 'left-50';
+              toSide = dy > 0 ? 'top-50' : 'bottom-50';
+              const fromA = getAnchorPosition(fromShapeX, fromShapeY, fromShape.w, fromShape.h, fromSide);
+              const toA = getAnchorPosition(toShapeX, toShapeY, toShape.w, toShape.h, toSide);
+              const wdx = toA.x - fromA.x;
+              const wdy = toA.y - fromA.y;
+              // L-shape: horizontal first, then vertical
+              waypoints = [0, 0, wdx, 0, wdx, wdy];
             }
           } else {
-            if (Math.abs(dx) >= Math.abs(dy)) {
-              fromSide = dx >= 0 ? 'right-50' : 'left-50';
-              toSide = dx >= 0 ? 'left-50' : 'right-50';
+            // Horizontal flow
+            if (Math.abs(dy) < cellH / 4) {
+              // Same row — straight horizontal: right → left
+              fromSide = 'right-50';
+              toSide = 'left-50';
+              const fromA = getAnchorPosition(fromShapeX, fromShapeY, fromShape.w, fromShape.h, fromSide);
+              const toA = getAnchorPosition(toShapeX, toShapeY, toShape.w, toShape.h, toSide);
+              const adx = toA.x - fromA.x;
+              const ady = toA.y - fromA.y;
+              waypoints = [0, 0, adx, ady];
             } else {
-              fromSide = dy >= 0 ? 'bottom-50' : 'top-50';
-              toSide = dy >= 0 ? 'top-50' : 'bottom-50';
+              // Different row — L-route
+              fromSide = dy > 0 ? 'bottom-50' : 'top-50';
+              toSide = 'left-50';
+              const fromA = getAnchorPosition(fromShapeX, fromShapeY, fromShape.w, fromShape.h, fromSide);
+              const toA = getAnchorPosition(toShapeX, toShapeY, toShape.w, toShape.h, toSide);
+              const adx = toA.x - fromA.x;
+              const ady = toA.y - fromA.y;
+              waypoints = [0, 0, 0, ady, adx, ady];
             }
           }
 
-          // Use actual shape positions and sizes for anchor calculation
-          const fromAnchor = getAnchorPosition(
-            fromShapeX,
-            fromShapeY,
-            fromShape.w,
-            fromShape.h,
-            fromSide
-          );
-          const toAnchor = getAnchorPosition(
-            toShapeX,
-            toShapeY,
-            toShape.w,
-            toShape.h,
-            toSide
-          );
+          // Compute the anchor points for storing on the arrow
+          const fromAnchor = getAnchorPosition(fromShapeX, fromShapeY, fromShape.w, fromShape.h, fromSide);
+          const toAnchor = getAnchorPosition(toShapeX, toShapeY, toShape.w, toShape.h, toSide);
           const adx = toAnchor.x - fromAnchor.x;
           const ady = toAnchor.y - fromAnchor.y;
 
@@ -1353,11 +1442,12 @@ async function executeToolInner(
             {
               stroke: '#000000',
               strokeWidth: 2,
-              points: [0, 0, adx, ady],
+              points: waypoints,
               startObjectId: fromDbId,
               endObjectId: toDbId,
               startAnchorSide: fromSide,
               endAnchorSide: toSide,
+              routing: 'orthogonal',
             },
             userId
           );
@@ -1365,28 +1455,31 @@ async function executeToolInner(
 
           // Create label for the connection if provided
           if (conn.label) {
-            // Place label in the gap between source and target nodes,
-            // offset horizontally away from the arrow line
-            const ptX = fromAnchor.x + adx * 0.3;
-            const ptY = fromAnchor.y + ady * 0.3;
-            // Push label outward: left arrows get label to the left,
-            // right arrows get label to the right, straight down to the right
+            // Place label along the first segment of the orthogonal path,
+            // offset away from the line so it doesn't overlap
             const labelW = 50;
             const labelH = 34;
             let labelX: number;
             let labelY: number;
-            if (Math.abs(adx) < 10) {
-              // Nearly straight vertical arrow — label to the right
-              labelX = ptX + 16;
-              labelY = ptY - labelH / 2;
-            } else if (adx < 0) {
-              // Arrow going left — label further left
-              labelX = ptX - labelW - 10;
-              labelY = ptY - labelH / 2;
+
+            // First segment direction: waypoints[2]-waypoints[0], waypoints[3]-waypoints[1]
+            const seg1dx = waypoints[2] - waypoints[0];
+            const seg1dy = waypoints[3] - waypoints[1];
+
+            if (Math.abs(seg1dx) > Math.abs(seg1dy)) {
+              // First segment is horizontal — place label above/below midpoint
+              const midX = fromAnchor.x + seg1dx * 0.5;
+              labelX = midX - labelW / 2;
+              labelY = fromAnchor.y - labelH - 4;
             } else {
-              // Arrow going right — label further right
-              labelX = ptX + 10;
-              labelY = ptY - labelH / 2;
+              // First segment is vertical — place label to the side
+              const midY = fromAnchor.y + seg1dy * 0.4;
+              if (adx < 0) {
+                labelX = fromAnchor.x - labelW - 8;
+              } else {
+                labelX = fromAnchor.x + 8;
+              }
+              labelY = midY - labelH / 2;
             }
             await insertObject(
               boardId,
