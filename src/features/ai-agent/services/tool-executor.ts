@@ -1009,7 +1009,7 @@ async function executeToolInner(
 
     case 'generateFlowchart': {
       const direction =
-        (input.direction as string) || 'top-to-bottom';
+        (input.direction as string) || 'left-to-right';
       const startX =
         input.x != null ? (input.x as number) : await findOpenX(boardId);
       const startY = (input.y as number) ?? 100;
@@ -1018,10 +1018,10 @@ async function executeToolInner(
       const isVertical = direction === 'top-to-bottom';
 
       // Uniform cell size for layout grid; shapes are centered within cells
-      const cellW = 200;
-      const cellH = 160;
-      const gap = 120; // Vertical gap between rows (reduced since nodes are shorter)
-      const hGap = 100; // Horizontal gap between sibling nodes
+      const cellW = 140;
+      const cellH = 140;
+      const gap = 30; // Gap between layers along the flow direction
+      const hGap = 20; // Gap between sibling nodes across the flow direction
 
       // Determine if using structured nodes+connections or legacy description
       const rawNodes = input.nodes as
@@ -1078,278 +1078,190 @@ async function executeToolInner(
           // Back-edges are skipped for layering but arrows are still drawn
         }
 
-        // Build adjacency from forward edges only (DAG)
-        const children = new Map<string, string[]>();
-        const inDegree = new Map<string, number>();
-        for (const n of cappedNodes) {
-          children.set(n.id, []);
-          inDegree.set(n.id, 0);
-        }
+        // Simple recursive layout:
+        // - First connection → next column, same row (main path)
+        // - Other connections → same column, next row (branches)
+        // Layout outgoing: forward edges only (avoids cycles in placement)
+        const outgoing = new Map<string, string[]>();
+        for (const n of cappedNodes) outgoing.set(n.id, []);
         for (const c of forwardConnections) {
-          children.get(c.from)!.push(c.to);
-          inDegree.set(c.to, inDegree.get(c.to)! + 1);
+          outgoing.get(c.from)!.push(c.to);
         }
 
-        // Topological layering on the DAG using longest path
-        const layer = new Map<string, number>();
-        const queue = cappedNodes
-          .filter((n) => inDegree.get(n.id)! === 0)
-          .map((n) => n.id);
-        if (queue.length === 0 && cappedNodes.length > 0) {
-          queue.push(cappedNodes[0].id);
-        }
-        for (const r of queue) {
-          layer.set(r, 0);
-        }
-        const visited = new Set<string>();
-        while (queue.length > 0) {
-          const curr = queue.shift()!;
-          if (visited.has(curr)) continue;
-          visited.add(curr);
-          const currLayer = layer.get(curr) ?? 0;
-          for (const child of children.get(curr)!) {
-            const existingLayer = layer.get(child) ?? -1;
-            if (currLayer + 1 > existingLayer) {
-              layer.set(child, currLayer + 1);
-            }
-            inDegree.set(child, inDegree.get(child)! - 1);
-            if (inDegree.get(child)! <= 0 && !visited.has(child)) {
-              queue.push(child);
-            }
-          }
+        // Full connection ordering from AI (to determine main-path vs branch)
+        const allOutgoing = new Map<string, string[]>();
+        for (const n of cappedNodes) allOutgoing.set(n.id, []);
+        for (const c of rawConnections) {
+          if (!nodeMap.has(c.from) || !nodeMap.has(c.to)) continue;
+          allOutgoing.get(c.from)!.push(c.to);
         }
 
-        // Handle nodes not reached (disconnected components)
-        for (const n of cappedNodes) {
-          if (!layer.has(n.id)) {
-            layer.set(n.id, nodeIndex.get(n.id)!);
-          }
-        }
+        const hasIncoming = new Set<string>();
+        for (const c of forwardConnections) hasIncoming.add(c.to);
+        const startId =
+          cappedNodes.find((n) => !hasIncoming.has(n.id))?.id ||
+          cappedNodes[0].id;
 
-        // Group nodes by layer
-        const layers = new Map<string, string[]>();
-        for (const n of cappedNodes) {
-          const l = String(layer.get(n.id)!);
-          if (!layers.has(l)) layers.set(l, []);
-          layers.get(l)!.push(n.id);
-        }
-
-        // --- Barycenter crossing minimization ---
-        // Build parent/child adjacency for cross-layer connections
-        const nodeParents = new Map<string, string[]>();
-        const nodeChildren = new Map<string, string[]>();
-        for (const n of cappedNodes) {
-          nodeParents.set(n.id, []);
-          nodeChildren.set(n.id, []);
-        }
+        // Detect convergence targets (nodes with 2+ incoming forward edges)
+        const incomingCount = new Map<string, number>();
         for (const c of forwardConnections) {
-          nodeChildren.get(c.from)!.push(c.to);
-          nodeParents.get(c.to)!.push(c.from);
+          incomingCount.set(c.to, (incomingCount.get(c.to) || 0) + 1);
         }
-
-        // Get sorted layer keys
-        const layerKeys = Array.from(layers.keys())
-          .map(Number)
-          .sort((a, b) => a - b);
-
-        // Run 4 sweeps (down, up, down, up) to iteratively reduce crossings
-        for (let sweep = 0; sweep < 4; sweep++) {
-          const keys =
-            sweep % 2 === 0 ? layerKeys : [...layerKeys].reverse();
-          for (let li = 1; li < keys.length; li++) {
-            const currKey = String(keys[li]);
-            const prevKey = String(keys[li - 1]);
-            const prevOrder = layers.get(prevKey)!;
-            const prevPos = new Map<string, number>();
-            prevOrder.forEach((id, idx) => prevPos.set(id, idx));
-
-            const currNodes = layers.get(currKey)!;
-            // Compute barycenter: average position of neighbors in previous layer
-            const bary = new Map<string, number>();
-            for (const nid of currNodes) {
-              const neighbors =
-                sweep % 2 === 0
-                  ? nodeParents.get(nid)!
-                  : nodeChildren.get(nid)!;
-              const positions = neighbors
-                .filter((p) => prevPos.has(p))
-                .map((p) => prevPos.get(p)!);
-              if (positions.length > 0) {
-                bary.set(
-                  nid,
-                  positions.reduce((a, b) => a + b, 0) / positions.length
-                );
-              } else {
-                // Keep original relative position for disconnected nodes
-                bary.set(nid, currNodes.indexOf(nid));
-              }
-            }
-            // Sort current layer by barycenter
-            currNodes.sort((a, b) => bary.get(a)! - bary.get(b)!);
-          }
-        }
-
-        // Calculate positions: center each layer's nodes
-        const maxNodesInLayer = Math.max(
-          ...Array.from(layers.values()).map((arr) => arr.length)
-        );
-        const totalWidthNeeded =
-          maxNodesInLayer * cellW + (maxNodesInLayer - 1) * hGap;
 
         const nodePositions = new Map<
           string,
           { x: number; y: number }
         >();
+        const placed = new Set<string>();
 
-        for (const [layerStr, nodeIds] of layers.entries()) {
-          const layerNum = parseInt(layerStr);
-          const count = nodeIds.length;
-          const layerWidth = count * cellW + (count - 1) * hGap;
-          const offsetX = (totalWidthNeeded - layerWidth) / 2;
+        function place(id: string, col: number, row: number) {
+          if (placed.has(id)) return;
+          placed.add(id);
 
-          for (let i = 0; i < nodeIds.length; i++) {
-            const nx = isVertical
-              ? startX + offsetX + i * (cellW + hGap)
-              : startX + layerNum * (cellW + gap);
-            const ny = isVertical
-              ? startY + layerNum * (cellH + gap)
-              : startY + offsetX + i * (cellH + hGap);
-            nodePositions.set(nodeIds[i], { x: nx, y: ny });
+          if (isVertical) {
+            nodePositions.set(id, {
+              x: startX + row * (cellW + hGap),
+              y: startY + col * (cellH + gap),
+            });
+          } else {
+            nodePositions.set(id, {
+              x: startX + col * (cellW + gap),
+              y: startY + row * (cellH + hGap),
+            });
+          }
+
+          const kids = outgoing.get(id) || [];
+          const allKids = allOutgoing.get(id) || [];
+
+          const unplaced = kids.filter((k) => !placed.has(k));
+          if (unplaced.length === 0) return;
+
+          // Determine which child goes right (main row):
+          // 1. Convergence target (multiple parents) — it's a join point
+          // 2. First child in original ordering, if still unplaced
+          // 3. If the original first child is already placed, ALL
+          //    remaining go below (they're branches, not the main path)
+          const convergenceKid = unplaced.find(
+            (k) => (incomingCount.get(k) || 0) > 1
+          );
+          const firstOrigKid = allKids[0];
+          const mainKid = convergenceKid ||
+            (unplaced.includes(firstOrigKid) ? firstOrigKid : null);
+
+          // Place main kid FIRST to claim its position before any
+          // recursive branch subtree can reach it via a longer path.
+          if (mainKid) {
+            place(mainKid, col + 1, row);
+          }
+          let branchIdx = 0;
+          for (const kid of unplaced) {
+            if (kid === mainKid) continue;
+            branchIdx++;
+            place(kid, col, row + branchIdx);
           }
         }
 
-        // Shape config per node type
-        // Each node becomes a shape + centered text overlay
-        interface NodeShapeConfig {
-          type: ObjectType;
-          w: number;
-          h: number;
-          fill: string;
-          stroke: string;
-        }
-        function getNodeShape(
-          nodeType: string,
-          nodeText: string
-        ): NodeShapeConfig {
-          if (nodeType === 'start' || nodeType === 'end') {
-            return {
-              type: 'circle',
-              w: 120,
-              h: 120,
-              fill: '#BBF7D0',
-              stroke: '#16A34A',
-            };
+        place(startId, 0, 0);
+        let maxRow = 0;
+        nodePositions.forEach((pos) => {
+          const r = isVertical
+            ? (pos.x - startX) / (cellW + hGap)
+            : (pos.y - startY) / (cellH + hGap);
+          if (r > maxRow) maxRow = Math.round(r);
+        });
+        for (const n of cappedNodes) {
+          if (!placed.has(n.id)) {
+            maxRow++;
+            place(n.id, 0, maxRow);
           }
-          if (nodeType === 'decision') {
-            return {
-              type: 'circle',
-              w: 150,
-              h: 150,
-              fill: '#FEF08A',
-              stroke: '#CA8A04',
-            };
-          }
-          if (/error/i.test(nodeText)) {
-            return {
-              type: 'rectangle',
-              w: 200,
-              h: 80,
-              fill: '#FECACA',
-              stroke: '#EF4444',
-            };
-          }
-          return {
-            type: 'rectangle',
-            w: 200,
-            h: 80,
-            fill: '#BFDBFE',
-            stroke: '#3B82F6',
-          };
         }
 
-        // Track actual shape sizes for anchor calculations
-        const nodeShapes = new Map<string, NodeShapeConfig>();
+        // Node color by type
+        // Terminal nodes = no forward outgoing connections (back-edges don't count)
+        const terminalNodes = new Set(
+          cappedNodes
+            .filter((n) => !(outgoing.get(n.id) || []).length)
+            .map((n) => n.id)
+        );
 
-        // Create all nodes (shape + text overlay per node)
-        const createdDbIds = new Map<string, string>(); // logical id → shape db id
+        function getNodeColor(nodeType: string, nodeText: string, isTerminal: boolean): string {
+          if (nodeType === 'decision') return '#FEF08A';
+          if (/error/i.test(nodeText)) return '#FECACA';
+          if (isTerminal && !/error/i.test(nodeText)) return '#BBF7D0';
+          if (/success|complete|done|finish/i.test(nodeText)) return '#BBF7D0';
+          return '#BFDBFE';
+        }
+
+        // All nodes are sticky notes — uniform size, text built-in
+        const noteW = cellW - 10;
+        const noteH = cellH - 10;
+
+        const createdDbIds = new Map<string, string>();
         for (const n of cappedNodes) {
           const pos = nodePositions.get(n.id)!;
           const info = nodeMap.get(n.id)!;
           const text = sanitize(info.text);
-          const shape = getNodeShape(info.type, info.text);
-          nodeShapes.set(n.id, shape);
+          const color = getNodeColor(info.type, info.text, terminalNodes.has(n.id));
 
-          // Center the shape within the cell
-          const shapeX = pos.x + (cellW - shape.w) / 2;
-          const shapeY = pos.y + (cellH - shape.h) / 2;
+          const noteX = pos.x + (cellW - noteW) / 2;
+          const noteY = pos.y + (cellH - noteH) / 2;
 
-          // Create the shape
-          const { id: shapeId, error: shapeErr } = await insertObject(
+          const { id: noteId, error: noteErr } = await insertObject(
             boardId,
-            shape.type,
-            shapeX,
-            shapeY,
-            shape.w,
-            shape.h,
-            {
-              fill: shape.fill,
-              stroke: shape.stroke,
-              strokeWidth: DEFAULT_STROKE_WIDTH,
-            },
+            'sticky_note',
+            noteX,
+            noteY,
+            noteW,
+            noteH,
+            { text, noteColor: color, fill: color },
             userId
           );
-          if (shapeErr) {
+          if (noteErr) {
             return {
               toolName,
               input,
-              result: `Error creating flowchart node "${info.text}": ${shapeErr}. Created ${createdDbIds.size} nodes before failure.`,
+              result: `Error creating flowchart node "${info.text}": ${noteErr}. Created ${createdDbIds.size} nodes before failure.`,
             };
           }
-          createdDbIds.set(n.id, shapeId);
-
-          // Create centered text overlay
-          const textW = shape.w - 16; // small padding inside shape
-          const textH = shape.h - 8;
-          const textX = shapeX + (shape.w - textW) / 2;
-          const textY = shapeY + (shape.h - textH) / 2;
-
-          await insertObject(
-            boardId,
-            'text',
-            textX,
-            textY,
-            textW,
-            textH,
-            {
-              text,
-              fontSize: 14,
-              fontFamily: DEFAULT_TEXT_FONT_FAMILY,
-              color: '#1a1a1a',
-              fill: '#1a1a1a',
-              textAlign: 'center',
-            },
-            userId
-          );
+          createdDbIds.set(n.id, noteId);
         }
 
-        // Create arrows for forward connections only with orthogonal routing.
-        // Back-edges (loops to earlier nodes) are skipped to avoid
-        // lines crossing through other nodes and creating visual chaos.
+        // Count back-edges per target to decide L-shape vs U-shape
+        const backEdgeTargetCount = new Map<string, number>();
+        for (const conn of rawConnections) {
+          if (conn.from === conn.to) continue;
+          if (!createdDbIds.has(conn.from) || !createdDbIds.has(conn.to)) continue;
+          const fi = nodeIndex.get(conn.from)!;
+          const ti = nodeIndex.get(conn.to)!;
+          if (ti <= fi) {
+            backEdgeTargetCount.set(conn.to, (backEdgeTargetCount.get(conn.to) || 0) + 1);
+          }
+        }
+
+        // Compute bottom extent for U-routing (only needed when multiple back-edges share a target)
+        let maxBottomY = 0;
+        for (const [, pos] of nodePositions) {
+          maxBottomY = Math.max(maxBottomY, pos.y + cellH);
+        }
+        const backEdgeY = maxBottomY + 30;
+
+        // Create arrows for all connections (including convergence edges
+        // where multiple paths lead to the same node).
         let arrowCount = 0;
         for (const conn of rawConnections) {
           const fromDbId = createdDbIds.get(conn.from);
           const toDbId = createdDbIds.get(conn.to);
           if (!fromDbId || !toDbId) continue;
-
-          // Skip back-edges (later node → earlier node)
-          const fromIdx = nodeIndex.get(conn.from)!;
-          const toIdx = nodeIndex.get(conn.to)!;
-          if (toIdx <= fromIdx) continue;
+          // Skip self-loops
+          if (conn.from === conn.to) continue;
 
           const fromPos = nodePositions.get(conn.from)!;
           const toPos = nodePositions.get(conn.to)!;
-          const fromShape = nodeShapes.get(conn.from)!;
-          const toShape = nodeShapes.get(conn.to)!;
+
+          // Back-edge = target before source in node order (retry/convergence)
+          const fromIdx = nodeIndex.get(conn.from)!;
+          const toIdx = nodeIndex.get(conn.to)!;
+          const isBackEdge = toIdx <= fromIdx;
 
           // Compute actual shape center positions
           const fromCX = fromPos.x + cellW / 2;
@@ -1357,80 +1269,82 @@ async function executeToolInner(
           const toCX = toPos.x + cellW / 2;
           const toCY = toPos.y + cellH / 2;
 
-          // Compute shape bounding boxes (centered in cell)
-          const fromShapeX = fromPos.x + (cellW - fromShape.w) / 2;
-          const fromShapeY = fromPos.y + (cellH - fromShape.h) / 2;
-          const toShapeX = toPos.x + (cellW - toShape.w) / 2;
-          const toShapeY = toPos.y + (cellH - toShape.h) / 2;
+          // Compute note bounding boxes (centered in cell)
+          const fromNoteX = fromPos.x + (cellW - noteW) / 2;
+          const fromNoteY = fromPos.y + (cellH - noteH) / 2;
+          const toNoteX = toPos.x + (cellW - noteW) / 2;
+          const toNoteY = toPos.y + (cellH - noteH) / 2;
 
           const dx = toCX - fromCX;
           const dy = toCY - fromCY;
 
-          // Determine routing: anchor sides + orthogonal waypoints
+          // Straight lines for same-row/same-col, L-routes for diagonal.
           let fromSide: string;
           let toSide: string;
-          let waypoints: number[]; // relative to fromAnchor: [0,0, ...midpoints, endDx,endDy]
+          let useOrthogonal = false;
 
-          if (isVertical) {
-            if (Math.abs(dx) < cellW / 4) {
-              // Same column — straight vertical: bottom → top
+          const sameRow = Math.abs(dy) < cellH / 4;
+          const sameCol = Math.abs(dx) < cellW / 4;
+
+          const needsURoute = isBackEdge && (backEdgeTargetCount.get(conn.to) || 0) > 1;
+
+          if (isBackEdge && !needsURoute) {
+            // Single back-edge: L-shape (exit left, enter bottom)
+            useOrthogonal = true;
+            fromSide = 'left-50';
+            toSide = 'bottom-50';
+          } else if (needsURoute) {
+            // Multiple back-edges to same target: U-shape underneath
+            fromSide = 'bottom-50';
+            toSide = 'bottom-50';
+          } else if (isVertical) {
+            if (sameCol) {
               fromSide = 'bottom-50';
               toSide = 'top-50';
-              const fromA = getAnchorPosition(fromShapeX, fromShapeY, fromShape.w, fromShape.h, fromSide);
-              const toA = getAnchorPosition(toShapeX, toShapeY, toShape.w, toShape.h, toSide);
-              const wdx = toA.x - fromA.x;
-              const wdy = toA.y - fromA.y;
-              waypoints = [0, 0, wdx, wdy];
-            } else if (Math.abs(dy) < cellH / 4) {
-              // Different column, same row — straight horizontal
+            } else if (sameRow) {
               fromSide = dx > 0 ? 'right-50' : 'left-50';
               toSide = dx > 0 ? 'left-50' : 'right-50';
-              const fromA = getAnchorPosition(fromShapeX, fromShapeY, fromShape.w, fromShape.h, fromSide);
-              const toA = getAnchorPosition(toShapeX, toShapeY, toShape.w, toShape.h, toSide);
-              const wdx = toA.x - fromA.x;
-              const wdy = toA.y - fromA.y;
-              waypoints = [0, 0, wdx, wdy];
             } else {
-              // Different column, different row — orthogonal L-route:
-              // Exit from side of source, go horizontal to align with target column,
-              // then go vertical to target's top anchor
+              useOrthogonal = true;
               fromSide = dx > 0 ? 'right-50' : 'left-50';
               toSide = dy > 0 ? 'top-50' : 'bottom-50';
-              const fromA = getAnchorPosition(fromShapeX, fromShapeY, fromShape.w, fromShape.h, fromSide);
-              const toA = getAnchorPosition(toShapeX, toShapeY, toShape.w, toShape.h, toSide);
-              const wdx = toA.x - fromA.x;
-              const wdy = toA.y - fromA.y;
-              // L-shape: horizontal first, then vertical
-              waypoints = [0, 0, wdx, 0, wdx, wdy];
             }
           } else {
-            // Horizontal flow
-            if (Math.abs(dy) < cellH / 4) {
-              // Same row — straight horizontal: right → left
-              fromSide = 'right-50';
-              toSide = 'left-50';
-              const fromA = getAnchorPosition(fromShapeX, fromShapeY, fromShape.w, fromShape.h, fromSide);
-              const toA = getAnchorPosition(toShapeX, toShapeY, toShape.w, toShape.h, toSide);
-              const adx = toA.x - fromA.x;
-              const ady = toA.y - fromA.y;
-              waypoints = [0, 0, adx, ady];
-            } else {
-              // Different row — L-route
+            if (sameRow) {
+              fromSide = dx > 0 ? 'right-50' : 'left-50';
+              toSide = dx > 0 ? 'left-50' : 'right-50';
+            } else if (sameCol) {
               fromSide = dy > 0 ? 'bottom-50' : 'top-50';
-              toSide = 'left-50';
-              const fromA = getAnchorPosition(fromShapeX, fromShapeY, fromShape.w, fromShape.h, fromSide);
-              const toA = getAnchorPosition(toShapeX, toShapeY, toShape.w, toShape.h, toSide);
-              const adx = toA.x - fromA.x;
-              const ady = toA.y - fromA.y;
-              waypoints = [0, 0, 0, ady, adx, ady];
+              toSide = dy > 0 ? 'top-50' : 'bottom-50';
+            } else {
+              useOrthogonal = true;
+              fromSide = dy > 0 ? 'bottom-50' : 'top-50';
+              toSide = dx > 0 ? 'left-50' : 'right-50';
             }
           }
 
-          // Compute the anchor points for storing on the arrow
-          const fromAnchor = getAnchorPosition(fromShapeX, fromShapeY, fromShape.w, fromShape.h, fromSide);
-          const toAnchor = getAnchorPosition(toShapeX, toShapeY, toShape.w, toShape.h, toSide);
+          const fromAnchor = getAnchorPosition(
+            fromNoteX, fromNoteY, noteW, noteH, fromSide
+          );
+          const toAnchor = getAnchorPosition(
+            toNoteX, toNoteY, noteW, noteH, toSide
+          );
           const adx = toAnchor.x - fromAnchor.x;
           const ady = toAnchor.y - fromAnchor.y;
+
+          let points: number[];
+          if (needsURoute) {
+            // U-route: down below all nodes, left, then up
+            const dropY = backEdgeY - fromAnchor.y;
+            points = [0, 0, 0, dropY, adx, dropY, adx, ady];
+          } else if (useOrthogonal) {
+            // L-route: vertical first then horizontal, or vice versa
+            points = (fromSide === 'bottom-50' || fromSide === 'top-50')
+              ? [0, 0, 0, ady, adx, ady]   // vertical then horizontal
+              : [0, 0, adx, 0, adx, ady];  // horizontal then vertical
+          } else {
+            points = [0, 0, adx, ady];
+          }
 
           await insertObject(
             boardId,
@@ -1440,14 +1354,15 @@ async function executeToolInner(
             Math.abs(adx) || 1,
             Math.abs(ady) || 1,
             {
-              stroke: '#000000',
+              stroke: isBackEdge ? '#9CA3AF' : '#000000',
               strokeWidth: 2,
-              points: waypoints,
+              lineStyle: isBackEdge ? 'dashed' : 'solid',
+              points,
               startObjectId: fromDbId,
               endObjectId: toDbId,
               startAnchorSide: fromSide,
               endAnchorSide: toSide,
-              routing: 'orthogonal',
+              ...((useOrthogonal || isBackEdge) ? { routing: 'orthogonal' } : {}),
             },
             userId
           );
@@ -1455,31 +1370,19 @@ async function executeToolInner(
 
           // Create label for the connection if provided
           if (conn.label) {
-            // Place label along the first segment of the orthogonal path,
-            // offset away from the line so it doesn't overlap
-            const labelW = 50;
+            const labelW = 56;
             const labelH = 34;
             let labelX: number;
             let labelY: number;
 
-            // First segment direction: waypoints[2]-waypoints[0], waypoints[3]-waypoints[1]
-            const seg1dx = waypoints[2] - waypoints[0];
-            const seg1dy = waypoints[3] - waypoints[1];
-
-            if (Math.abs(seg1dx) > Math.abs(seg1dy)) {
-              // First segment is horizontal — place label above/below midpoint
-              const midX = fromAnchor.x + seg1dx * 0.5;
-              labelX = midX - labelW / 2;
-              labelY = fromAnchor.y - labelH - 4;
+            if (Math.abs(adx) > Math.abs(ady)) {
+              // Mostly horizontal — label above the line
+              labelX = fromAnchor.x + adx * 0.4 - labelW / 2;
+              labelY = fromAnchor.y - labelH - 2;
             } else {
-              // First segment is vertical — place label to the side
-              const midY = fromAnchor.y + seg1dy * 0.4;
-              if (adx < 0) {
-                labelX = fromAnchor.x - labelW - 8;
-              } else {
-                labelX = fromAnchor.x + 8;
-              }
-              labelY = midY - labelH / 2;
+              // Mostly vertical — label to the right of the line
+              labelX = fromAnchor.x + 4;
+              labelY = fromAnchor.y + ady * 0.4 - labelH / 2;
             }
             await insertObject(
               boardId,
@@ -1498,6 +1401,7 @@ async function executeToolInner(
             );
           }
         }
+
 
         return {
           toolName,

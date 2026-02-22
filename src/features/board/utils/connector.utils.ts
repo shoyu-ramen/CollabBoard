@@ -43,15 +43,20 @@ export function getObjectAnchors(obj: WhiteboardObject): Anchor[] {
     const rx = width / 2;
     const ry = height / 2;
     // 8 evenly-spaced points around the ellipse (every 45°)
+    // Plus "-50" aliases so AI-generated anchor names (e.g. "right-50") resolve correctly
     anchors = [
-      { x: cx, y: cy - ry, side: 'top' },                         // 0°
-      { x: cx + rx * Math.SQRT1_2, y: cy - ry * Math.SQRT1_2, side: 'top-right' },  // 45°
-      { x: cx + rx, y: cy, side: 'right' },                        // 90°
-      { x: cx + rx * Math.SQRT1_2, y: cy + ry * Math.SQRT1_2, side: 'bottom-right' }, // 135°
-      { x: cx, y: cy + ry, side: 'bottom' },                       // 180°
-      { x: cx - rx * Math.SQRT1_2, y: cy + ry * Math.SQRT1_2, side: 'bottom-left' }, // 225°
-      { x: cx - rx, y: cy, side: 'left' },                         // 270°
-      { x: cx - rx * Math.SQRT1_2, y: cy - ry * Math.SQRT1_2, side: 'top-left' },  // 315°
+      { x: cx, y: cy - ry, side: 'top' },
+      { x: cx, y: cy - ry, side: 'top-50' },
+      { x: cx + rx * Math.SQRT1_2, y: cy - ry * Math.SQRT1_2, side: 'top-right' },
+      { x: cx + rx, y: cy, side: 'right' },
+      { x: cx + rx, y: cy, side: 'right-50' },
+      { x: cx + rx * Math.SQRT1_2, y: cy + ry * Math.SQRT1_2, side: 'bottom-right' },
+      { x: cx, y: cy + ry, side: 'bottom' },
+      { x: cx, y: cy + ry, side: 'bottom-50' },
+      { x: cx - rx * Math.SQRT1_2, y: cy + ry * Math.SQRT1_2, side: 'bottom-left' },
+      { x: cx - rx, y: cy, side: 'left' },
+      { x: cx - rx, y: cy, side: 'left-50' },
+      { x: cx - rx * Math.SQRT1_2, y: cy - ry * Math.SQRT1_2, side: 'top-left' },
     ];
   } else {
     anchors = [

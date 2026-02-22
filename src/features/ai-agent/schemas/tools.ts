@@ -425,8 +425,9 @@ export const AI_TOOLS: ClaudeToolDefinition[] = [
         },
         direction: {
           type: 'string',
-          enum: ['top-to-bottom', 'left-to-right'],
-          description: 'Layout direction (default: "top-to-bottom")',
+          enum: ['left-to-right', 'top-to-bottom'],
+          description:
+            'Layout direction. Use "left-to-right" unless the user explicitly requests vertical layout.',
         },
         x: {
           type: 'number',
