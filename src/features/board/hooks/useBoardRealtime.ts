@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { CURSOR_THROTTLE_MS, CURSOR_COLORS } from '@/lib/constants';
 import { useBoardObjects } from './useBoardObjects';
+import { useCanvas } from './useCanvas';
 import { shouldApplyRemoteChange } from '../services/sync.service';
 import {
   getConnectedArrows,
@@ -417,6 +418,24 @@ export function useBoardRealtime({
       }
     });
 
+    // --- Presence join (re-broadcast viewport so new users see us on minimap) ---
+    liveChannel.on('presence', { event: 'join' }, ({ newPresences }) => {
+      const joined = newPresences as unknown as Array<{ userId: string }>;
+      // Don't react to our own join
+      if (joined.some((p) => p.userId === userId)) return;
+      // Re-broadcast our viewport so the new user sees our rect on their minimap
+      const canvasState = useCanvas.getState();
+      if (_broadcastFn) {
+        _broadcastFn('viewport', {
+          userId,
+          zoom: canvasState.zoom,
+          panOffsetX: canvasState.panOffset.x,
+          panOffsetY: canvasState.panOffset.y,
+          timestamp: Date.now(),
+        });
+      }
+    });
+
     // --- Presence leave (immediate cursor + follow/spotlight cleanup) ---
     liveChannel.on('presence', { event: 'leave' }, ({ leftPresences }) => {
       const left = leftPresences as unknown as Array<{ userId: string }>;
@@ -501,6 +520,16 @@ export function useBoardRealtime({
           userName,
           color: userColor,
           onlineAt: new Date().toISOString(),
+        });
+
+        // Broadcast initial viewport so remote minimaps show our rect
+        const canvasState = useCanvas.getState();
+        _broadcastFn('viewport', {
+          userId,
+          zoom: canvasState.zoom,
+          panOffsetX: canvasState.panOffset.x,
+          panOffsetY: canvasState.panOffset.y,
+          timestamp: Date.now(),
         });
       }
     });

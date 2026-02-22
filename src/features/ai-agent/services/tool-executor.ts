@@ -976,14 +976,286 @@ async function executeToolInner(
     }
 
     case 'generateFlowchart': {
-      const description = (input.description as string) || '';
       const direction =
         (input.direction as string) || 'top-to-bottom';
       const startX =
         input.x != null ? (input.x as number) : await findOpenX(boardId);
       const startY = (input.y as number) ?? 100;
-      const nodeColor = (input.nodeColor as string) ?? '#BFDBFE';
+      const defaultColor = (input.nodeColor as string) ?? '#BFDBFE';
+      const decisionColor = '#FEF08A'; // Yellow for decision nodes
+      const isVertical = direction === 'top-to-bottom';
 
+      const nodeW = DEFAULT_STICKY_WIDTH;
+      const nodeH = DEFAULT_STICKY_HEIGHT;
+      const gap = 80;
+
+      // Determine if using structured nodes+connections or legacy description
+      const rawNodes = input.nodes as
+        | Array<{
+            id: string;
+            text: string;
+            type?: string;
+            color?: string;
+          }>
+        | undefined;
+      const rawConnections = input.connections as
+        | Array<{ from: string; to: string; label?: string }>
+        | undefined;
+
+      if (rawNodes && rawNodes.length > 0 && rawConnections) {
+        // === Structured graph mode with branching support ===
+        const cappedNodes = rawNodes.slice(0, 30);
+        const nodeMap = new Map<
+          string,
+          {
+            id: string;
+            text: string;
+            type: string;
+            color: string;
+          }
+        >();
+        for (const n of cappedNodes) {
+          nodeMap.set(n.id, {
+            id: n.id,
+            text: n.text,
+            type: n.type || 'step',
+            color:
+              n.color ||
+              (n.type === 'decision' ? decisionColor : defaultColor),
+          });
+        }
+
+        // Build adjacency and in-degree for layer assignment
+        const children = new Map<string, string[]>();
+        const parents = new Map<string, string[]>();
+        for (const n of cappedNodes) {
+          children.set(n.id, []);
+          parents.set(n.id, []);
+        }
+        for (const c of rawConnections) {
+          if (nodeMap.has(c.from) && nodeMap.has(c.to)) {
+            children.get(c.from)!.push(c.to);
+            parents.get(c.to)!.push(c.from);
+          }
+        }
+
+        // Assign layers using longest path from roots (BFS topological)
+        const layer = new Map<string, number>();
+        // Find roots (no incoming edges)
+        const roots = cappedNodes
+          .filter((n) => parents.get(n.id)!.length === 0)
+          .map((n) => n.id);
+        if (roots.length === 0 && cappedNodes.length > 0) {
+          roots.push(cappedNodes[0].id);
+        }
+
+        // Use longest-path layering for better branching visualization
+        for (const r of roots) {
+          layer.set(r, 0);
+        }
+        // Process in topological order
+        const queue = [...roots];
+        const visited = new Set<string>();
+        while (queue.length > 0) {
+          const curr = queue.shift()!;
+          if (visited.has(curr)) continue;
+          // Ensure all parents are visited first
+          const allParentsVisited = parents
+            .get(curr)!
+            .every((p) => visited.has(p));
+          if (!allParentsVisited && !roots.includes(curr)) {
+            queue.push(curr);
+            continue;
+          }
+          visited.add(curr);
+          const currLayer = layer.get(curr) ?? 0;
+          for (const child of children.get(curr)!) {
+            const existingLayer = layer.get(child) ?? -1;
+            if (currLayer + 1 > existingLayer) {
+              layer.set(child, currLayer + 1);
+            }
+            if (!visited.has(child)) {
+              queue.push(child);
+            }
+          }
+        }
+
+        // Handle nodes not reached (disconnected components)
+        for (const n of cappedNodes) {
+          if (!layer.has(n.id)) {
+            layer.set(n.id, 0);
+          }
+        }
+
+        // Group nodes by layer
+        const layers = new Map<string, string[]>();
+        for (const n of cappedNodes) {
+          const l = String(layer.get(n.id)!);
+          if (!layers.has(l)) layers.set(l, []);
+          layers.get(l)!.push(n.id);
+        }
+
+        // Calculate positions: center each layer's nodes
+        const maxNodesInLayer = Math.max(
+          ...Array.from(layers.values()).map((arr) => arr.length)
+        );
+        const totalWidthNeeded =
+          maxNodesInLayer * nodeW + (maxNodesInLayer - 1) * gap;
+
+        const nodePositions = new Map<
+          string,
+          { x: number; y: number }
+        >();
+
+        for (const [layerStr, nodeIds] of layers.entries()) {
+          const layerNum = parseInt(layerStr);
+          const count = nodeIds.length;
+          const layerWidth = count * nodeW + (count - 1) * gap;
+          const offsetX = (totalWidthNeeded - layerWidth) / 2;
+
+          for (let i = 0; i < nodeIds.length; i++) {
+            const nx = isVertical
+              ? startX + offsetX + i * (nodeW + gap)
+              : startX + layerNum * (nodeW + gap);
+            const ny = isVertical
+              ? startY + layerNum * (nodeH + gap)
+              : startY + offsetX + i * (nodeH + gap);
+            nodePositions.set(nodeIds[i], { x: nx, y: ny });
+          }
+        }
+
+        // Create all nodes
+        const createdDbIds = new Map<string, string>(); // logical id → db id
+        for (const n of cappedNodes) {
+          const pos = nodePositions.get(n.id)!;
+          const info = nodeMap.get(n.id)!;
+          const text = sanitize(info.text);
+          const color = info.color;
+
+          const { id, error } = await insertObject(
+            boardId,
+            'sticky_note',
+            pos.x,
+            pos.y,
+            nodeW,
+            nodeH,
+            { text, noteColor: color, fill: color },
+            userId
+          );
+          if (error) {
+            return {
+              toolName,
+              input,
+              result: `Error creating flowchart node "${info.text}": ${error}. Created ${createdDbIds.size} nodes before failure.`,
+            };
+          }
+          createdDbIds.set(n.id, id);
+        }
+
+        // Create arrows for all connections
+        let arrowCount = 0;
+        for (const conn of rawConnections) {
+          const fromDbId = createdDbIds.get(conn.from);
+          const toDbId = createdDbIds.get(conn.to);
+          if (!fromDbId || !toDbId) continue;
+
+          const fromPos = nodePositions.get(conn.from)!;
+          const toPos = nodePositions.get(conn.to)!;
+
+          // Determine anchor sides based on relative position
+          let fromSide: string;
+          let toSide: string;
+          const dx = toPos.x - fromPos.x;
+          const dy = toPos.y - fromPos.y;
+
+          if (isVertical) {
+            if (Math.abs(dy) >= Math.abs(dx)) {
+              // Primarily vertical connection
+              fromSide = dy >= 0 ? 'bottom-50' : 'top-50';
+              toSide = dy >= 0 ? 'top-50' : 'bottom-50';
+            } else {
+              // Primarily horizontal (branch side connections)
+              fromSide = dx >= 0 ? 'right-50' : 'left-50';
+              toSide = dx >= 0 ? 'left-50' : 'right-50';
+            }
+          } else {
+            if (Math.abs(dx) >= Math.abs(dy)) {
+              fromSide = dx >= 0 ? 'right-50' : 'left-50';
+              toSide = dx >= 0 ? 'left-50' : 'right-50';
+            } else {
+              fromSide = dy >= 0 ? 'bottom-50' : 'top-50';
+              toSide = dy >= 0 ? 'top-50' : 'bottom-50';
+            }
+          }
+
+          const fromAnchor = getAnchorPosition(
+            fromPos.x,
+            fromPos.y,
+            nodeW,
+            nodeH,
+            fromSide
+          );
+          const toAnchor = getAnchorPosition(
+            toPos.x,
+            toPos.y,
+            nodeW,
+            nodeH,
+            toSide
+          );
+          const adx = toAnchor.x - fromAnchor.x;
+          const ady = toAnchor.y - fromAnchor.y;
+
+          await insertObject(
+            boardId,
+            'arrow',
+            fromAnchor.x,
+            fromAnchor.y,
+            Math.abs(adx) || 1,
+            Math.abs(ady) || 1,
+            {
+              stroke: '#000000',
+              strokeWidth: 2,
+              points: [0, 0, adx, ady],
+              startObjectId: fromDbId,
+              endObjectId: toDbId,
+              startAnchorSide: fromSide,
+              endAnchorSide: toSide,
+            },
+            userId
+          );
+          arrowCount++;
+
+          // Create label for the connection if provided
+          if (conn.label) {
+            const labelX = fromAnchor.x + adx * 0.5 - 30;
+            const labelY = fromAnchor.y + ady * 0.5 - 12;
+            await insertObject(
+              boardId,
+              'text',
+              labelX,
+              labelY,
+              60,
+              24,
+              {
+                text: sanitize(conn.label),
+                fontSize: 14,
+                fontFamily: DEFAULT_TEXT_FONT_FAMILY,
+                fill: '#6B7280',
+              },
+              userId
+            );
+          }
+        }
+
+        return {
+          toolName,
+          input,
+          result: `Created flowchart with ${createdDbIds.size} nodes and ${arrowCount} arrows (${direction}) including branching paths.`,
+        };
+      }
+
+      // === Legacy linear mode (description string) ===
+      const description = (input.description as string) || '';
       const steps = parseFlowchartSteps(description);
 
       if (steps.length === 0) {
@@ -991,21 +1263,13 @@ async function executeToolInner(
           toolName,
           input,
           result:
-            'Error: Could not parse any steps from the description. Provide a comma-separated list, numbered steps, or one step per line.',
+            'Error: Could not parse any steps from the description. Provide nodes+connections for branching, or a comma-separated list for a simple linear flow.',
         };
       }
 
-      // Cap at 20 nodes
       const cappedSteps = steps.slice(0, 20);
-
-      const nodeW = DEFAULT_STICKY_WIDTH;
-      const nodeH = DEFAULT_STICKY_HEIGHT;
-      const gap = 80; // Space between nodes (including arrow room)
-      const isVertical = direction === 'top-to-bottom';
-
       const createdIds: string[] = [];
 
-      // Create nodes
       for (let i = 0; i < cappedSteps.length; i++) {
         const text = sanitize(cappedSteps[i]);
         const nx = isVertical ? startX : startX + i * (nodeW + gap);
@@ -1018,7 +1282,7 @@ async function executeToolInner(
           ny,
           nodeW,
           nodeH,
-          { text, noteColor: nodeColor, fill: nodeColor },
+          { text, noteColor: defaultColor, fill: defaultColor },
           userId
         );
         if (error) {
@@ -1031,7 +1295,6 @@ async function executeToolInner(
         createdIds.push(id);
       }
 
-      // Create arrows between consecutive nodes
       for (let i = 0; i < createdIds.length - 1; i++) {
         const fromIdx = i;
         const toIdx = i + 1;
@@ -1065,20 +1328,20 @@ async function executeToolInner(
           nodeH,
           toSide
         );
-        const dx = toAnchor.x - fromAnchor.x;
-        const dy = toAnchor.y - fromAnchor.y;
+        const adx = toAnchor.x - fromAnchor.x;
+        const ady = toAnchor.y - fromAnchor.y;
 
         await insertObject(
           boardId,
           'arrow',
           fromAnchor.x,
           fromAnchor.y,
-          dx,
-          dy,
+          Math.abs(adx) || 1,
+          Math.abs(ady) || 1,
           {
             stroke: '#000000',
             strokeWidth: 2,
-            points: [0, 0, dx, dy],
+            points: [0, 0, adx, ady],
             startObjectId: createdIds[i],
             endObjectId: createdIds[i + 1],
             startAnchorSide: fromSide,

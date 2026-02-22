@@ -204,6 +204,7 @@ export function AIChatPanel({ boardId, isOpen, onClose }: AIChatPanelProps) {
             </p>
             <div className="mt-4 flex flex-col gap-2">
               {[
+                'Create a password reset flowchart',
                 'Create a SWOT analysis template',
                 'Add 3 sticky notes for brainstorming',
                 'Create a Kanban board layout',

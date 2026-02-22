@@ -350,14 +350,69 @@ export const AI_TOOLS: ClaudeToolDefinition[] = [
   {
     name: 'generateFlowchart',
     description:
-      'Generate a connected flowchart diagram from a process description. Creates sticky note nodes with arrows connecting them in sequence. Use this when the user describes a process, workflow, or sequence of steps to visualize.',
+      'Generate a connected flowchart diagram with support for branching (decision points with Yes/No paths). Provide structured nodes and connections for full control over the flow graph. Each node has a unique id, text label, and optional type. Connections define edges between nodes with optional labels (e.g. "Yes", "No").',
     input_schema: {
       type: 'object',
       properties: {
+        nodes: {
+          type: 'array',
+          description:
+            'Array of flowchart nodes. Each node has a unique id, text label, and optional type.',
+          items: {
+            type: 'object',
+            properties: {
+              id: {
+                type: 'string',
+                description:
+                  'Unique node identifier (e.g. "1", "2a", "2b")',
+              },
+              text: {
+                type: 'string',
+                description: 'Node label text',
+              },
+              type: {
+                type: 'string',
+                enum: ['step', 'decision', 'start', 'end'],
+                description:
+                  'Node type. "decision" nodes are diamond-shaped decision points. Default: "step".',
+              },
+              color: {
+                type: 'string',
+                description:
+                  'Override color for this specific node as hex.',
+              },
+            },
+            required: ['id', 'text'],
+          },
+        },
+        connections: {
+          type: 'array',
+          description:
+            'Array of directed connections between nodes.',
+          items: {
+            type: 'object',
+            properties: {
+              from: {
+                type: 'string',
+                description: 'Source node id',
+              },
+              to: {
+                type: 'string',
+                description: 'Target node id',
+              },
+              label: {
+                type: 'string',
+                description:
+                  'Edge label (e.g. "Yes", "No", "Error")',
+              },
+            },
+            required: ['from', 'to'],
+          },
+        },
         description: {
           type: 'string',
           description:
-            'The process or workflow to visualize. Can be a comma-separated list, numbered steps, or natural language description of steps.',
+            'Fallback: a simple process description for linear flowcharts. Use nodes+connections instead for branching flows.',
         },
         direction: {
           type: 'string',
@@ -377,10 +432,10 @@ export const AI_TOOLS: ClaudeToolDefinition[] = [
         nodeColor: {
           type: 'string',
           description:
-            'Color for the flowchart nodes as hex (default: "#BFDBFE")',
+            'Default color for flowchart nodes as hex (default: "#BFDBFE"). Decision nodes default to "#FEF08A" (yellow).',
         },
       },
-      required: ['description'],
+      required: [],
     },
   },
 ];
