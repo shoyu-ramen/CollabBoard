@@ -314,6 +314,15 @@ export const AI_TOOLS: ClaudeToolDefinition[] = [
     },
   },
   {
+    name: 'clearBoard',
+    description:
+      'Delete ALL objects from the whiteboard in a single operation. Use this when the user wants to clear, reset, or start fresh. Much faster than deleting objects one by one.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
     name: 'getBoardState',
     description:
       'Get the current state of all objects on the whiteboard. Use this to understand what is already on the board before making changes.',

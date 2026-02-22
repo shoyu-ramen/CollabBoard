@@ -724,6 +724,37 @@ async function executeToolInner(
       };
     }
 
+    case 'clearBoard': {
+      // Get all object IDs first so client can remove them
+      const { data: allObjects } = await supabase
+        .from('whiteboard_objects')
+        .select('id')
+        .eq('board_id', boardId);
+
+      const count = allObjects?.length ?? 0;
+
+      const { error } = await supabase
+        .from('whiteboard_objects')
+        .delete()
+        .eq('board_id', boardId);
+
+      if (error) {
+        return {
+          toolName,
+          input,
+          result: `Error clearing board: ${error.message}`,
+        };
+      }
+
+      const deletedIds = (allObjects || []).map((o) => o.id);
+      return {
+        toolName,
+        input,
+        result: `Cleared board — deleted ${count} objects`,
+        deletedIds,
+      };
+    }
+
     case 'createTemplate': {
       const templateType = (input.type as string) || '';
       const baseX =
@@ -985,9 +1016,11 @@ async function executeToolInner(
       const decisionColor = '#FEF08A'; // Yellow for decision nodes
       const isVertical = direction === 'top-to-bottom';
 
-      const nodeW = DEFAULT_STICKY_WIDTH;
-      const nodeH = DEFAULT_STICKY_HEIGHT;
-      const gap = 80;
+      // Uniform cell size for layout grid; shapes are centered within cells
+      const cellW = 200;
+      const cellH = 160;
+      const gap = 120; // Vertical gap between rows (reduced since nodes are shorter)
+      const hGap = 100; // Horizontal gap between sibling nodes
 
       // Determine if using structured nodes+connections or legacy description
       const rawNodes = input.nodes as
@@ -1025,48 +1058,52 @@ async function executeToolInner(
           });
         }
 
-        // Build adjacency and in-degree for layer assignment
+        // Build node index map for detecting back-edges
+        const nodeIndex = new Map<string, number>();
+        for (let i = 0; i < cappedNodes.length; i++) {
+          nodeIndex.set(cappedNodes[i].id, i);
+        }
+
+        // Separate forward edges from back-edges (cycles)
+        // A back-edge points from a later node to an earlier node in Claude's ordering
+        const forwardConnections: Array<{ from: string; to: string }> = [];
+        for (const c of rawConnections) {
+          if (!nodeMap.has(c.from) || !nodeMap.has(c.to)) continue;
+          const fromIdx = nodeIndex.get(c.from)!;
+          const toIdx = nodeIndex.get(c.to)!;
+          if (toIdx > fromIdx) {
+            forwardConnections.push(c);
+          }
+          // Back-edges are skipped for layering but arrows are still drawn
+        }
+
+        // Build adjacency from forward edges only (DAG)
         const children = new Map<string, string[]>();
-        const parents = new Map<string, string[]>();
+        const inDegree = new Map<string, number>();
         for (const n of cappedNodes) {
           children.set(n.id, []);
-          parents.set(n.id, []);
+          inDegree.set(n.id, 0);
         }
-        for (const c of rawConnections) {
-          if (nodeMap.has(c.from) && nodeMap.has(c.to)) {
-            children.get(c.from)!.push(c.to);
-            parents.get(c.to)!.push(c.from);
-          }
+        for (const c of forwardConnections) {
+          children.get(c.from)!.push(c.to);
+          inDegree.set(c.to, inDegree.get(c.to)! + 1);
         }
 
-        // Assign layers using longest path from roots (BFS topological)
+        // Topological layering on the DAG using longest path
         const layer = new Map<string, number>();
-        // Find roots (no incoming edges)
-        const roots = cappedNodes
-          .filter((n) => parents.get(n.id)!.length === 0)
+        const queue = cappedNodes
+          .filter((n) => inDegree.get(n.id)! === 0)
           .map((n) => n.id);
-        if (roots.length === 0 && cappedNodes.length > 0) {
-          roots.push(cappedNodes[0].id);
+        if (queue.length === 0 && cappedNodes.length > 0) {
+          queue.push(cappedNodes[0].id);
         }
-
-        // Use longest-path layering for better branching visualization
-        for (const r of roots) {
+        for (const r of queue) {
           layer.set(r, 0);
         }
-        // Process in topological order
-        const queue = [...roots];
         const visited = new Set<string>();
         while (queue.length > 0) {
           const curr = queue.shift()!;
           if (visited.has(curr)) continue;
-          // Ensure all parents are visited first
-          const allParentsVisited = parents
-            .get(curr)!
-            .every((p) => visited.has(p));
-          if (!allParentsVisited && !roots.includes(curr)) {
-            queue.push(curr);
-            continue;
-          }
           visited.add(curr);
           const currLayer = layer.get(curr) ?? 0;
           for (const child of children.get(curr)!) {
@@ -1074,7 +1111,8 @@ async function executeToolInner(
             if (currLayer + 1 > existingLayer) {
               layer.set(child, currLayer + 1);
             }
-            if (!visited.has(child)) {
+            inDegree.set(child, inDegree.get(child)! - 1);
+            if (inDegree.get(child)! <= 0 && !visited.has(child)) {
               queue.push(child);
             }
           }
@@ -1083,7 +1121,7 @@ async function executeToolInner(
         // Handle nodes not reached (disconnected components)
         for (const n of cappedNodes) {
           if (!layer.has(n.id)) {
-            layer.set(n.id, 0);
+            layer.set(n.id, nodeIndex.get(n.id)!);
           }
         }
 
@@ -1100,7 +1138,7 @@ async function executeToolInner(
           ...Array.from(layers.values()).map((arr) => arr.length)
         );
         const totalWidthNeeded =
-          maxNodesInLayer * nodeW + (maxNodesInLayer - 1) * gap;
+          maxNodesInLayer * cellW + (maxNodesInLayer - 1) * hGap;
 
         const nodePositions = new Map<
           string,
@@ -1110,57 +1148,158 @@ async function executeToolInner(
         for (const [layerStr, nodeIds] of layers.entries()) {
           const layerNum = parseInt(layerStr);
           const count = nodeIds.length;
-          const layerWidth = count * nodeW + (count - 1) * gap;
+          const layerWidth = count * cellW + (count - 1) * hGap;
           const offsetX = (totalWidthNeeded - layerWidth) / 2;
 
           for (let i = 0; i < nodeIds.length; i++) {
             const nx = isVertical
-              ? startX + offsetX + i * (nodeW + gap)
-              : startX + layerNum * (nodeW + gap);
+              ? startX + offsetX + i * (cellW + hGap)
+              : startX + layerNum * (cellW + gap);
             const ny = isVertical
-              ? startY + layerNum * (nodeH + gap)
-              : startY + offsetX + i * (nodeH + gap);
+              ? startY + layerNum * (cellH + gap)
+              : startY + offsetX + i * (cellH + hGap);
             nodePositions.set(nodeIds[i], { x: nx, y: ny });
           }
         }
 
-        // Create all nodes
-        const createdDbIds = new Map<string, string>(); // logical id → db id
+        // Shape config per node type
+        // Each node becomes a shape + centered text overlay
+        interface NodeShapeConfig {
+          type: ObjectType;
+          w: number;
+          h: number;
+          fill: string;
+          stroke: string;
+        }
+        function getNodeShape(
+          nodeType: string,
+          nodeText: string
+        ): NodeShapeConfig {
+          if (nodeType === 'start' || nodeType === 'end') {
+            return {
+              type: 'circle',
+              w: 120,
+              h: 120,
+              fill: '#BBF7D0',
+              stroke: '#16A34A',
+            };
+          }
+          if (nodeType === 'decision') {
+            return {
+              type: 'circle',
+              w: 150,
+              h: 150,
+              fill: '#FEF08A',
+              stroke: '#CA8A04',
+            };
+          }
+          if (/error/i.test(nodeText)) {
+            return {
+              type: 'rectangle',
+              w: 200,
+              h: 80,
+              fill: '#FECACA',
+              stroke: '#EF4444',
+            };
+          }
+          return {
+            type: 'rectangle',
+            w: 200,
+            h: 80,
+            fill: '#BFDBFE',
+            stroke: '#3B82F6',
+          };
+        }
+
+        // Track actual shape sizes for anchor calculations
+        const nodeShapes = new Map<string, NodeShapeConfig>();
+
+        // Create all nodes (shape + text overlay per node)
+        const createdDbIds = new Map<string, string>(); // logical id → shape db id
         for (const n of cappedNodes) {
           const pos = nodePositions.get(n.id)!;
           const info = nodeMap.get(n.id)!;
           const text = sanitize(info.text);
-          const color = info.color;
+          const shape = getNodeShape(info.type, info.text);
+          nodeShapes.set(n.id, shape);
 
-          const { id, error } = await insertObject(
+          // Center the shape within the cell
+          const shapeX = pos.x + (cellW - shape.w) / 2;
+          const shapeY = pos.y + (cellH - shape.h) / 2;
+
+          // Create the shape
+          const { id: shapeId, error: shapeErr } = await insertObject(
             boardId,
-            'sticky_note',
-            pos.x,
-            pos.y,
-            nodeW,
-            nodeH,
-            { text, noteColor: color, fill: color },
+            shape.type,
+            shapeX,
+            shapeY,
+            shape.w,
+            shape.h,
+            {
+              fill: shape.fill,
+              stroke: shape.stroke,
+              strokeWidth: DEFAULT_STROKE_WIDTH,
+            },
             userId
           );
-          if (error) {
+          if (shapeErr) {
             return {
               toolName,
               input,
-              result: `Error creating flowchart node "${info.text}": ${error}. Created ${createdDbIds.size} nodes before failure.`,
+              result: `Error creating flowchart node "${info.text}": ${shapeErr}. Created ${createdDbIds.size} nodes before failure.`,
             };
           }
-          createdDbIds.set(n.id, id);
+          createdDbIds.set(n.id, shapeId);
+
+          // Create centered text overlay
+          const textW = shape.w - 16; // small padding inside shape
+          const textH = shape.h - 8;
+          const textX = shapeX + (shape.w - textW) / 2;
+          const textY = shapeY + (shape.h - textH) / 2;
+
+          await insertObject(
+            boardId,
+            'text',
+            textX,
+            textY,
+            textW,
+            textH,
+            {
+              text,
+              fontSize: 14,
+              fontFamily: DEFAULT_TEXT_FONT_FAMILY,
+              color: '#1a1a1a',
+              fill: '#1a1a1a',
+              textAlign: 'center',
+            },
+            userId
+          );
         }
 
-        // Create arrows for all connections
+        // Create arrows for forward connections only
+        // Back-edges (loops to earlier nodes) are skipped to avoid
+        // lines crossing through other nodes and creating visual chaos
         let arrowCount = 0;
         for (const conn of rawConnections) {
           const fromDbId = createdDbIds.get(conn.from);
           const toDbId = createdDbIds.get(conn.to);
           if (!fromDbId || !toDbId) continue;
 
+          // Skip back-edges (later node → earlier node)
+          const fromIdx = nodeIndex.get(conn.from)!;
+          const toIdx = nodeIndex.get(conn.to)!;
+          if (toIdx <= fromIdx) continue;
+
           const fromPos = nodePositions.get(conn.from)!;
           const toPos = nodePositions.get(conn.to)!;
+          const fromShape = nodeShapes.get(conn.from)!;
+          const toShape = nodeShapes.get(conn.to)!;
+
+          // Compute actual shape position (centered in cell)
+          const fromShapeX = fromPos.x + (cellW - fromShape.w) / 2;
+          const fromShapeY = fromPos.y + (cellH - fromShape.h) / 2;
+          const toShapeX = toPos.x + (cellW - toShape.w) / 2;
+          const toShapeY = toPos.y + (cellH - toShape.h) / 2;
 
           // Determine anchor sides based on relative position
           let fromSide: string;
@@ -1170,11 +1309,9 @@ async function executeToolInner(
 
           if (isVertical) {
             if (Math.abs(dy) >= Math.abs(dx)) {
-              // Primarily vertical connection
               fromSide = dy >= 0 ? 'bottom-50' : 'top-50';
               toSide = dy >= 0 ? 'top-50' : 'bottom-50';
             } else {
-              // Primarily horizontal (branch side connections)
               fromSide = dx >= 0 ? 'right-50' : 'left-50';
               toSide = dx >= 0 ? 'left-50' : 'right-50';
             }
@@ -1188,18 +1325,19 @@ async function executeToolInner(
             }
           }
 
+          // Use actual shape positions and sizes for anchor calculation
           const fromAnchor = getAnchorPosition(
-            fromPos.x,
-            fromPos.y,
-            nodeW,
-            nodeH,
+            fromShapeX,
+            fromShapeY,
+            fromShape.w,
+            fromShape.h,
             fromSide
           );
           const toAnchor = getAnchorPosition(
-            toPos.x,
-            toPos.y,
-            nodeW,
-            nodeH,
+            toShapeX,
+            toShapeY,
+            toShape.w,
+            toShape.h,
             toSide
           );
           const adx = toAnchor.x - fromAnchor.x;
@@ -1227,15 +1365,36 @@ async function executeToolInner(
 
           // Create label for the connection if provided
           if (conn.label) {
-            const labelX = fromAnchor.x + adx * 0.5 - 30;
-            const labelY = fromAnchor.y + ady * 0.5 - 12;
+            // Place label in the gap between source and target nodes,
+            // offset horizontally away from the arrow line
+            const ptX = fromAnchor.x + adx * 0.3;
+            const ptY = fromAnchor.y + ady * 0.3;
+            // Push label outward: left arrows get label to the left,
+            // right arrows get label to the right, straight down to the right
+            const labelW = 50;
+            const labelH = 34;
+            let labelX: number;
+            let labelY: number;
+            if (Math.abs(adx) < 10) {
+              // Nearly straight vertical arrow — label to the right
+              labelX = ptX + 16;
+              labelY = ptY - labelH / 2;
+            } else if (adx < 0) {
+              // Arrow going left — label further left
+              labelX = ptX - labelW - 10;
+              labelY = ptY - labelH / 2;
+            } else {
+              // Arrow going right — label further right
+              labelX = ptX + 10;
+              labelY = ptY - labelH / 2;
+            }
             await insertObject(
               boardId,
               'text',
               labelX,
               labelY,
-              60,
-              24,
+              labelW,
+              labelH,
               {
                 text: sanitize(conn.label),
                 fontSize: 14,
@@ -1255,6 +1414,9 @@ async function executeToolInner(
       }
 
       // === Legacy linear mode (description string) ===
+      // Legacy mode uses sticky notes for simplicity
+      const nodeW = DEFAULT_STICKY_WIDTH;
+      const nodeH = DEFAULT_STICKY_HEIGHT;
       const description = (input.description as string) || '';
       const steps = parseFlowchartSteps(description);
 

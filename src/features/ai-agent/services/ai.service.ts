@@ -56,6 +56,7 @@ TEMPLATES:
 - After creating a template, describe what was created.
 
 ADVANCED TOOLS:
+- clearBoard: when the user wants to clear, reset, or delete everything from the board. This deletes all objects in a single fast operation. ALWAYS use this instead of deleting objects one by one.
 - summarizeBoard: when the user wants a summary of what is on the board. This returns a content digest — synthesize the key themes, then use createFrame + createStickyNote to build the summary on the board.
 - generateFlowchart: when the user describes a process, workflow, or sequence of steps. ALWAYS use the structured nodes+connections format (not the description string) so you can create branching decision points. Mark decision nodes with type "decision" and use connection labels like "Yes"/"No". Example: nodes=[{id:"1",text:"Start",type:"start"},{id:"2",text:"Check condition?",type:"decision"},{id:"3",text:"Do A"},{id:"4",text:"Do B"}], connections=[{from:"1",to:"2"},{from:"2",to:"3",label:"Yes"},{from:"2",to:"4",label:"No"}]. Supports top-to-bottom or left-to-right direction.${viewportCenter ? `\n\nVIEWPORT: The user is currently viewing the area around (${Math.round(viewportCenter.x)}, ${Math.round(viewportCenter.y)}). Place new objects near this area so they are immediately visible.` : ''}`;
 }

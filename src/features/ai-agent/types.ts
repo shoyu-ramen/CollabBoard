@@ -15,6 +15,7 @@ export interface ToolCallResult {
   input: Record<string, unknown>;
   result: string;
   objectId?: string;
+  deletedIds?: string[];
 }
 
 // Claude API types (raw fetch, no SDK)

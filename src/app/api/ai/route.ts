@@ -164,14 +164,19 @@ export async function POST(request: NextRequest) {
       ctx
     );
 
-    // Extract deleted object IDs from tool calls
-    const deletedObjectIds = toolCalls
-      .filter((tc) => tc.toolName === 'deleteObject' && tc.objectId)
-      .map((tc) => tc.objectId as string);
+    // Extract deleted object IDs from tool calls (deleteObject + clearBoard)
+    const deletedObjectIds = [
+      ...toolCalls
+        .filter((tc) => tc.toolName === 'deleteObject' && tc.objectId)
+        .map((tc) => tc.objectId as string),
+      ...toolCalls
+        .filter((tc) => tc.toolName === 'clearBoard' && tc.deletedIds)
+        .flatMap((tc) => tc.deletedIds as string[]),
+    ];
 
     // Fetch created objects so the client can hydrate its local store immediately
     const createdObjectIds = toolCalls
-      .filter((tc) => tc.toolName !== 'deleteObject')
+      .filter((tc) => tc.toolName !== 'deleteObject' && tc.toolName !== 'clearBoard')
       .map((tc) => tc.objectId)
       .filter((id): id is string => !!id);
 
